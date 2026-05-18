@@ -67,7 +67,7 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts PutOptions) (*PutResponse, error) {
-	rawURL, err := c.fileURL(fileID)
+	path, err := c.filePath(fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,9 +78,8 @@ func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts Pu
 	addHeader(header, "Content-Disposition", contentDisposition(opts.Filename))
 
 	var out PutResponse
-	err = c.http.DecodeJSON(ctx, httpx.Request{
+	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodPut,
-		URL:           rawURL,
 		Header:        header,
 		Body:          body,
 		ContentLength: opts.ContentLength,
@@ -89,16 +88,15 @@ func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts Pu
 }
 
 func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http.Response, error) {
-	rawURL, err := c.fileURL(fileID)
+	path, err := c.filePath(fileID)
 	if err != nil {
 		return nil, err
 	}
 	header := http.Header{}
 	addHeader(header, "Range", opts.Range)
 
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodGet,
-		URL:           rawURL,
 		Header:        header,
 		ContentLength: -1,
 	})
@@ -107,19 +105,18 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		defer resp.Body.Close()
-		return nil, httpx.ResponseError(http.MethodGet, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodGet, resp.Request.URL.String(), resp)
 	}
 	return resp, nil
 }
 
 func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
-	rawURL, err := c.fileURL(fileID)
+	path, err := c.filePath(fileID)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodHead,
-		URL:           rawURL,
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -127,47 +124,44 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, httpx.ResponseError(http.MethodHead, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
 	return resp.Header.Clone(), nil
 }
 
 func (c *Client) Delete(ctx context.Context, fileID string) error {
-	rawURL, err := c.fileURL(fileID)
+	path, err := c.filePath(fileID)
 	if err != nil {
 		return err
 	}
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodDelete,
-		URL:           rawURL,
 		ContentLength: -1,
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
 func (c *Client) Status(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
-		URL:           c.endpoints.URL("/status"),
 		ContentLength: -1,
 	}, &out)
 	return out, err
 }
 
 func (c *Client) Health(ctx context.Context) error {
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
-		URL:           c.endpoints.URL("/status"),
 		ContentLength: -1,
 	}, http.StatusOK)
 }
 
-func (c *Client) fileURL(fileID string) (string, error) {
+func (c *Client) filePath(fileID string) (string, error) {
 	fileID = strings.TrimLeft(fileID, "/")
 	if fileID == "" {
 		return "", fmt.Errorf("volume: file id is required")
 	}
-	return c.endpoints.URL("/") + fileID, nil
+	return "/" + fileID, nil
 }
 
 func addHeader(header http.Header, key string, value string) {

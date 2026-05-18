@@ -144,7 +144,7 @@ func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts P
 }
 
 func (c *Client) write(ctx context.Context, path string, body io.Reader, opts PutOptions, op string) (*WriteResponse, error) {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -152,9 +152,8 @@ func (c *Client) write(ctx context.Context, path string, body io.Reader, opts Pu
 	httpx.AddString(query, "op", op)
 
 	var out WriteResponse
-	err = c.http.DecodeJSON(ctx, httpx.Request{
+	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPut,
-		URL:           rawURL,
 		Query:         query,
 		Header:        putHeader(opts),
 		Body:          body,
@@ -164,37 +163,35 @@ func (c *Client) write(ctx context.Context, path string, body io.Reader, opts Pu
 }
 
 func (c *Client) Copy(ctx context.Context, srcPath string, dstPath string) error {
-	rawURL, err := c.resourceURL(dstPath)
+	resourcePath, err := c.resourcePath(dstPath)
 	if err != nil {
 		return err
 	}
 	query := url.Values{}
 	query.Set("cp.from", srcPath)
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPost,
-		URL:           rawURL,
 		Query:         query,
 		ContentLength: 0,
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
 func (c *Client) Move(ctx context.Context, srcPath string, dstPath string) error {
-	rawURL, err := c.resourceURL(dstPath)
+	resourcePath, err := c.resourcePath(dstPath)
 	if err != nil {
 		return err
 	}
 	query := url.Values{}
 	query.Set("mv.from", srcPath)
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPost,
-		URL:           rawURL,
 		Query:         query,
 		ContentLength: 0,
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
 func (c *Client) SetTags(ctx context.Context, path string, tags map[string]string) error {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return err
 	}
@@ -204,9 +201,8 @@ func (c *Client) SetTags(ctx context.Context, path string, tags map[string]strin
 	for key, value := range tags {
 		header.Set("Seaweed-"+strings.TrimPrefix(key, "Seaweed-"), value)
 	}
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPut,
-		URL:           rawURL,
 		Query:         query,
 		Header:        header,
 		ContentLength: 0,
@@ -214,34 +210,32 @@ func (c *Client) SetTags(ctx context.Context, path string, tags map[string]strin
 }
 
 func (c *Client) DeleteTags(ctx context.Context, path string, keys ...string) error {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return err
 	}
 	query := url.Values{}
 	query.Set("tagging", strings.Join(keys, ","))
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodDelete,
-		URL:           rawURL,
 		Query:         query,
 		ContentLength: -1,
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
 func (c *Client) Mkdir(ctx context.Context, path string) error {
-	rawURL, err := c.resourceURL(ensureTrailingSlash(path))
+	resourcePath, err := c.resourcePath(ensureTrailingSlash(path))
 	if err != nil {
 		return err
 	}
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPost,
-		URL:           rawURL,
 		ContentLength: 0,
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
 func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.Response, error) {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -249,9 +243,8 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 	httpx.AddString(query, "response-content-disposition", opts.ResponseContentDisposition)
 	addBool(query, "resolveManifest", opts.ResolveManifest)
 
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodGet,
-		URL:           rawURL,
 		Query:         query,
 		ContentLength: -1,
 	})
@@ -260,19 +253,18 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		defer resp.Body.Close()
-		return nil, httpx.ResponseError(http.MethodGet, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodGet, resp.Request.URL.String(), resp)
 	}
 	return resp, nil
 }
 
 func (c *Client) Head(ctx context.Context, path string) (http.Header, error) {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodHead,
-		URL:           rawURL,
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -280,13 +272,13 @@ func (c *Client) Head(ctx context.Context, path string) (http.Header, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, httpx.ResponseError(http.MethodHead, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
 	return resp.Header.Clone(), nil
 }
 
 func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entry, error) {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -295,9 +287,8 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 	addBool(query, "resolveManifest", opts.ResolveManifest)
 
 	var out Entry
-	err = c.http.DecodeJSON(ctx, httpx.Request{
+	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodGet,
-		URL:           rawURL,
 		Query:         query,
 		ContentLength: -1,
 	}, &out)
@@ -305,7 +296,7 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 }
 
 func (c *Client) List(ctx context.Context, path string, opts ListOptions) (*ListResponse, error) {
-	rawURL, err := c.resourceURL(ensureTrailingSlash(path))
+	resourcePath, err := c.resourcePath(ensureTrailingSlash(path))
 	if err != nil {
 		return nil, err
 	}
@@ -316,9 +307,8 @@ func (c *Client) List(ctx context.Context, path string, opts ListOptions) (*List
 	httpx.AddString(query, "namePatternExclude", opts.NamePatternExclude)
 
 	var out ListResponse
-	err = c.http.DecodeJSON(ctx, httpx.Request{
+	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method: http.MethodGet,
-		URL:    rawURL,
 		Query:  query,
 		Header: http.Header{
 			"Accept": []string{"application/json"},
@@ -329,7 +319,7 @@ func (c *Client) List(ctx context.Context, path string, opts ListOptions) (*List
 }
 
 func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) error {
-	rawURL, err := c.resourceURL(path)
+	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return err
 	}
@@ -337,20 +327,19 @@ func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) er
 	addBool(query, "recursive", opts.Recursive)
 	addBool(query, "ignoreRecursiveError", opts.IgnoreRecursiveError)
 	addBool(query, "skipChunkDeletion", opts.SkipChunkDeletion)
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodDelete,
-		URL:           rawURL,
 		Query:         query,
 		ContentLength: -1,
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
-func (c *Client) resourceURL(path string) (string, error) {
+func (c *Client) resourcePath(path string) (string, error) {
 	escapedPath, err := escapePath(path)
 	if err != nil {
 		return "", err
 	}
-	return c.endpoints.URL(escapedPath), nil
+	return escapedPath, nil
 }
 
 func putQuery(opts PutOptions) url.Values {

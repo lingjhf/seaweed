@@ -103,13 +103,12 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) Options(ctx context.Context) (*Options, error) {
-	rawURL, err := c.baseURL("/")
+	path, err := c.baseURL("/")
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodOptions,
-		URL:           rawURL,
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -117,7 +116,7 @@ func (c *Client) Options(ctx context.Context) (*Options, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, httpx.ResponseError(http.MethodOptions, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodOptions, resp.Request.URL.String(), resp)
 	}
 	maxSize, err := parseIntHeader(resp.Header.Get("Tus-Max-Size"))
 	if err != nil {
@@ -132,7 +131,7 @@ func (c *Client) Options(ctx context.Context) (*Options, error) {
 }
 
 func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptions) (*Upload, error) {
-	rawURL, err := c.baseURL(targetPath)
+	path, err := c.baseURL(targetPath)
 	if err != nil {
 		return nil, err
 	}
@@ -140,9 +139,8 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
 	addMetadata(header, opts.Metadata)
 
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodPost,
-		URL:           rawURL,
 		Header:        header,
 		ContentLength: 0,
 	})
@@ -151,7 +149,7 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		return nil, httpx.ResponseError(http.MethodPost, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
 	location, err := c.resolveLocation(resp.Header.Get("Location"))
 	if err != nil {
@@ -169,7 +167,7 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 }
 
 func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body io.Reader, opts CreateOptions) (*Upload, error) {
-	rawURL, err := c.baseURL(targetPath)
+	path, err := c.baseURL(targetPath)
 	if err != nil {
 		return nil, err
 	}
@@ -178,9 +176,8 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	header.Set("Content-Type", c.contentType)
 	addMetadata(header, opts.Metadata)
 
-	resp, err := c.http.Do(ctx, httpx.Request{
+	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodPost,
-		URL:           rawURL,
 		Header:        header,
 		Body:          body,
 		ContentLength: opts.Size,
@@ -190,7 +187,7 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		return nil, httpx.ResponseError(http.MethodPost, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
 	location, err := c.resolveLocation(resp.Header.Get("Location"))
 	if err != nil {
@@ -208,22 +205,28 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 }
 
 func (c *Client) Head(ctx context.Context, location string) (*Status, error) {
-	rawURL, err := c.uploadURL(location)
+	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.http.Do(ctx, httpx.Request{
+	request := httpx.Request{
 		Method:        http.MethodHead,
-		URL:           rawURL,
 		Header:        c.baseHeader(),
 		ContentLength: -1,
-	})
+	}
+	var resp *http.Response
+	if endpointAware {
+		resp, err = c.http.DoEndpoint(ctx, c.endpoints, target, request)
+	} else {
+		request.URL = target
+		resp, err = c.http.Do(ctx, request)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, httpx.ResponseError(http.MethodHead, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
 	offset, err := parseIntHeader(resp.Header.Get("Upload-Offset"))
 	if err != nil {
@@ -237,26 +240,32 @@ func (c *Client) Head(ctx context.Context, location string) (*Status, error) {
 }
 
 func (c *Client) Patch(ctx context.Context, location string, offset int64, body io.Reader, length int64) (*Status, error) {
-	rawURL, err := c.uploadURL(location)
+	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
 		return nil, err
 	}
 	header := c.baseHeader()
 	header.Set("Upload-Offset", strconv.FormatInt(offset, 10))
 	header.Set("Content-Type", c.contentType)
-	resp, err := c.http.Do(ctx, httpx.Request{
+	request := httpx.Request{
 		Method:        http.MethodPatch,
-		URL:           rawURL,
 		Header:        header,
 		Body:          body,
 		ContentLength: length,
-	})
+	}
+	var resp *http.Response
+	if endpointAware {
+		resp, err = c.http.DoEndpoint(ctx, c.endpoints, target, request)
+	} else {
+		request.URL = target
+		resp, err = c.http.Do(ctx, request)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		return nil, httpx.ResponseError(http.MethodPatch, rawURL, resp)
+		return nil, httpx.ResponseError(http.MethodPatch, resp.Request.URL.String(), resp)
 	}
 	newOffset, err := parseIntHeader(resp.Header.Get("Upload-Offset"))
 	if err != nil {
@@ -266,16 +275,20 @@ func (c *Client) Patch(ctx context.Context, location string, offset int64, body 
 }
 
 func (c *Client) Terminate(ctx context.Context, location string) error {
-	rawURL, err := c.uploadURL(location)
+	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
 		return err
 	}
-	return c.http.CheckStatus(ctx, httpx.Request{
+	request := httpx.Request{
 		Method:        http.MethodDelete,
-		URL:           rawURL,
 		Header:        c.baseHeader(),
 		ContentLength: -1,
-	}, http.StatusNoContent)
+	}
+	if endpointAware {
+		return c.http.CheckStatusEndpoint(ctx, c.endpoints, target, request, http.StatusNoContent)
+	}
+	request.URL = target
+	return c.http.CheckStatus(ctx, request, http.StatusNoContent)
 }
 
 func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, opts UploadOptions) (*Upload, error) {
@@ -347,21 +360,24 @@ func (c *Client) baseURL(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return c.endpoints.URL(c.basePath + escaped), nil
+	return c.basePath + escaped, nil
 }
 
-func (c *Client) uploadURL(location string) (string, error) {
+func (c *Client) uploadURL(location string) (string, bool, error) {
 	if location == "" {
-		return "", fmt.Errorf("tus: location is required")
+		return "", false, fmt.Errorf("tus: location is required")
 	}
 	parsed, err := url.Parse(location)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if parsed.IsAbs() {
-		return parsed.String(), nil
+		return parsed.String(), false, nil
 	}
-	return c.resolveLocation(location)
+	if !strings.HasPrefix(location, "/") {
+		return "", false, fmt.Errorf("tus: relative location must start with /")
+	}
+	return location, true, nil
 }
 
 func (c *Client) resolveLocation(location string) (string, error) {

@@ -111,6 +111,44 @@ func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error
 	return nil, lastErr
 }
 
+func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request) (*http.Response, error) {
+	if endpoints == nil {
+		return nil, fmt.Errorf("httpx: endpoints are required")
+	}
+	candidates := endpoints.Candidates(path)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("httpx: endpoints are required")
+	}
+	if !isRetryableMethod(request.Method) {
+		candidates = candidates[:1]
+	}
+
+	var lastErr error
+	for i, candidate := range candidates {
+		request.URL = candidate.URL
+		resp, err := c.Do(ctx, request)
+		if err == nil && !shouldRetryResponse(request.Method, resp.StatusCode) {
+			endpoints.MarkSuccess(candidate.Index)
+			return resp, nil
+		}
+		if i == len(candidates)-1 {
+			if err != nil {
+				return nil, err
+			}
+			return resp, nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			resp.Body.Close()
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
 func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error {
 	resp, err := c.Do(ctx, request)
 	if err != nil {
@@ -119,7 +157,26 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return ResponseError(request.Method, request.URL, resp)
+		return ResponseError(request.Method, responseURL(resp, request.URL), resp)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DecodeJSONEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request, out any) error {
+	resp, err := c.DoEndpoint(ctx, endpoints, path, request)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 	}
 	if out == nil {
 		return nil
@@ -142,7 +199,22 @@ func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...i
 			return nil
 		}
 	}
-	return ResponseError(request.Method, request.URL, resp)
+	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
+}
+
+func (c *Client) CheckStatusEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request, expected ...int) error {
+	resp, err := c.DoEndpoint(ctx, endpoints, path, request)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	for _, status := range expected {
+		if resp.StatusCode == status {
+			return nil
+		}
+	}
+	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 }
 
 func (c *Client) newHTTPRequest(ctx context.Context, request Request) (*http.Request, error) {
@@ -173,6 +245,13 @@ func (c *Client) newHTTPRequest(ctx context.Context, request Request) (*http.Req
 		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
 	}
 	return req, nil
+}
+
+func responseURL(resp *http.Response, fallback string) string {
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		return resp.Request.URL.String()
+	}
+	return fallback
 }
 
 func ResponseError(method, rawURL string, resp *http.Response) error {

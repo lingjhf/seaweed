@@ -125,9 +125,8 @@ func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignRespons
 	httpx.AddString(query, "disk", opts.Disk)
 
 	var out AssignResponse
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/assign", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/dir/assign"),
 		Query:  query,
 	}, &out)
 	return &out, err
@@ -143,9 +142,8 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 	}
 
 	var out LookupResponse
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/lookup", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/dir/lookup"),
 		Query:  query,
 	}, &out)
 	return &out, err
@@ -154,9 +152,8 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
 	query := url.Values{}
 	httpx.AddFloat64(query, "garbageThreshold", garbageThreshold)
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/vol/vacuum", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/vol/vacuum"),
 		Query:  query,
 	}, http.StatusOK)
 }
@@ -175,9 +172,8 @@ func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, er
 	httpx.AddString(query, "disk", opts.Disk)
 
 	var out CountResponse
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/vol/grow", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/vol/grow"),
 		Query:  query,
 	}, &out)
 	return &out, err
@@ -186,43 +182,38 @@ func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, er
 func (c *Client) DeleteCollection(ctx context.Context, collection string) error {
 	query := url.Values{}
 	query.Set("collection", collection)
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/col/delete", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/col/delete"),
 		Query:  query,
 	}, http.StatusOK)
 }
 
 func (c *Client) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	var out ClusterStatus
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/cluster/status", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/cluster/status"),
 	}, &out)
 	return &out, err
 }
 
 func (c *Client) Health(ctx context.Context) error {
-	return c.http.CheckStatus(ctx, httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/cluster/healthz", httpx.Request{
 		Method: http.MethodHead,
-		URL:    c.endpoints.URL("/cluster/healthz"),
 	}, http.StatusOK)
 }
 
 func (c *Client) DirStatus(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/status", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/dir/status"),
 	}, &out)
 	return out, err
 }
 
 func (c *Client) VolumeStatus(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
-	err := c.http.DecodeJSON(ctx, httpx.Request{
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/vol/status", httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.endpoints.URL("/vol/status"),
 	}, &out)
 	return out, err
 }

@@ -261,6 +261,141 @@ func TestDoDoesNotRetryNonRetryableMethod(t *testing.T) {
 	}
 }
 
+func TestDoEndpointFailsOverRetryableRequests(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+	var secondCalls int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		if r.URL.Path != "/status" {
+			t.Fatalf("path = %q, want /status", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSet([]string{first.URL, second.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: first.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() error = %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	if firstCalls != 1 || secondCalls != 1 {
+		t.Fatalf("calls = %d/%d, want 1/1", firstCalls, secondCalls)
+	}
+
+	resp, err = client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() after promotion error = %v", err)
+	}
+	resp.Body.Close()
+	if firstCalls != 1 || secondCalls != 2 {
+		t.Fatalf("calls after promotion = %d/%d, want 1/2", firstCalls, secondCalls)
+	}
+}
+
+func TestDoEndpointDoesNotFailOverNonRetryableRequests(t *testing.T) {
+	t.Parallel()
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+	var secondCalls int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSet([]string{first.URL, second.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: first.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/upload", httpx.Request{
+		Method:        http.MethodPost,
+		ContentLength: 0,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() error = %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+	if secondCalls != 0 {
+		t.Fatalf("second calls = %d, want 0", secondCalls)
+	}
+}
+
+func TestDoEndpointFailsOverTransportErrors(t *testing.T) {
+	t.Parallel()
+
+	broken := httptest.NewServer(http.NotFoundHandler())
+	brokenURL := broken.URL
+	broken.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSet([]string{brokenURL, second.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: second.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+}
+
 func TestDecodeJSON(t *testing.T) {
 	t.Parallel()
 

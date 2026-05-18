@@ -13,6 +13,11 @@ type EndpointSet struct {
 	active int
 }
 
+type EndpointCandidate struct {
+	Index int
+	URL   string
+}
+
 func NewEndpointSet(rawURLs []string) (*EndpointSet, error) {
 	urls, err := NormalizeBaseURLs(rawURLs)
 	if err != nil {
@@ -72,4 +77,28 @@ func (s *EndpointSet) URL(path string) string {
 	defer s.mu.RUnlock()
 
 	return s.urls[s.active] + path
+}
+
+func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	candidates := make([]EndpointCandidate, 0, len(s.urls))
+	for offset := range s.urls {
+		index := (s.active + offset) % len(s.urls)
+		candidates = append(candidates, EndpointCandidate{
+			Index: index,
+			URL:   s.urls[index] + path,
+		})
+	}
+	return candidates
+}
+
+func (s *EndpointSet) MarkSuccess(index int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if index >= 0 && index < len(s.urls) {
+		s.active = index
+	}
 }
