@@ -113,21 +113,99 @@ func New(config Config) *Client {
 }
 
 func (c *Client) Put(ctx context.Context, path string, body io.Reader, opts PutOptions) (*WriteResponse, error) {
+	return c.write(ctx, path, body, opts, "")
+}
+
+func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts PutOptions) (*WriteResponse, error) {
+	if opts.Offset != nil {
+		return nil, fmt.Errorf("filer: append is incompatible with offset")
+	}
+	return c.write(ctx, path, body, opts, "append")
+}
+
+func (c *Client) write(ctx context.Context, path string, body io.Reader, opts PutOptions, op string) (*WriteResponse, error) {
 	rawURL, err := c.resourceURL(path)
 	if err != nil {
 		return nil, err
 	}
+	query := putQuery(opts)
+	httpx.AddString(query, "op", op)
 
 	var out WriteResponse
 	err = c.http.DecodeJSON(ctx, httpx.Request{
 		Method:        http.MethodPut,
 		URL:           rawURL,
-		Query:         putQuery(opts),
+		Query:         query,
 		Header:        putHeader(opts),
 		Body:          body,
 		ContentLength: opts.ContentLength,
 	}, &out)
 	return &out, err
+}
+
+func (c *Client) Copy(ctx context.Context, srcPath string, dstPath string) error {
+	rawURL, err := c.resourceURL(dstPath)
+	if err != nil {
+		return err
+	}
+	query := url.Values{}
+	query.Set("cp.from", srcPath)
+	return c.http.CheckStatus(ctx, httpx.Request{
+		Method:        http.MethodPost,
+		URL:           rawURL,
+		Query:         query,
+		ContentLength: 0,
+	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
+}
+
+func (c *Client) Move(ctx context.Context, srcPath string, dstPath string) error {
+	rawURL, err := c.resourceURL(dstPath)
+	if err != nil {
+		return err
+	}
+	query := url.Values{}
+	query.Set("mv.from", srcPath)
+	return c.http.CheckStatus(ctx, httpx.Request{
+		Method:        http.MethodPost,
+		URL:           rawURL,
+		Query:         query,
+		ContentLength: 0,
+	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
+}
+
+func (c *Client) SetTags(ctx context.Context, path string, tags map[string]string) error {
+	rawURL, err := c.resourceURL(path)
+	if err != nil {
+		return err
+	}
+	query := url.Values{}
+	query.Set("tagging", "")
+	header := http.Header{}
+	for key, value := range tags {
+		header.Set("Seaweed-"+strings.TrimPrefix(key, "Seaweed-"), value)
+	}
+	return c.http.CheckStatus(ctx, httpx.Request{
+		Method:        http.MethodPut,
+		URL:           rawURL,
+		Query:         query,
+		Header:        header,
+		ContentLength: 0,
+	}, http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent)
+}
+
+func (c *Client) DeleteTags(ctx context.Context, path string, keys ...string) error {
+	rawURL, err := c.resourceURL(path)
+	if err != nil {
+		return err
+	}
+	query := url.Values{}
+	query.Set("tagging", strings.Join(keys, ","))
+	return c.http.CheckStatus(ctx, httpx.Request{
+		Method:        http.MethodDelete,
+		URL:           rawURL,
+		Query:         query,
+		ContentLength: -1,
+	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
 func (c *Client) Mkdir(ctx context.Context, path string) error {

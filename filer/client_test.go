@@ -102,3 +102,52 @@ func TestListBuildsJSONRequest(t *testing.T) {
 		t.Fatalf("Entries len = %d, want 1", len(resp.Entries))
 	}
 }
+
+func TestCopyMoveAndTaggingRequests(t *testing.T) {
+	t.Parallel()
+
+	requests := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.String())
+		switch {
+		case r.URL.Query().Get("cp.from") == "/src.txt":
+			if r.URL.Path != "/dst.txt" {
+				t.Fatalf("copy path = %s, want /dst.txt", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Query().Get("mv.from") == "/dst.txt":
+			if r.URL.Path != "/moved.txt" {
+				t.Fatalf("move path = %s, want /moved.txt", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(r.URL.RawQuery, "tagging"):
+			if r.Method == http.MethodPut && r.Header.Get("Seaweed-Owner") != "sdk" {
+				t.Fatalf("Seaweed-Owner = %q", r.Header.Get("Seaweed-Owner"))
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := filer.New(filer.Config{
+		BaseURL: server.URL,
+		HTTP:    httpx.NewClient(httpx.Config{HTTPClient: server.Client()}),
+	})
+	if err := client.Copy(context.Background(), "/src.txt", "/dst.txt"); err != nil {
+		t.Fatalf("Copy() error = %v", err)
+	}
+	if err := client.Move(context.Background(), "/dst.txt", "/moved.txt"); err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+	if err := client.SetTags(context.Background(), "/moved.txt", map[string]string{"Owner": "sdk"}); err != nil {
+		t.Fatalf("SetTags() error = %v", err)
+	}
+	if err := client.DeleteTags(context.Background(), "/moved.txt", "Owner"); err != nil {
+		t.Fatalf("DeleteTags() error = %v", err)
+	}
+	if len(requests) != 4 {
+		t.Fatalf("request count = %d, want 4", len(requests))
+	}
+}
