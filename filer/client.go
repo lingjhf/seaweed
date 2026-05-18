@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
@@ -94,6 +95,13 @@ type ListOptions struct {
 	NamePatternExclude string
 }
 
+type WalkOptions struct {
+	Limit              int
+	LastFileName       string
+	NamePattern        string
+	NamePatternExclude string
+}
+
 type DeleteOptions struct {
 	Recursive            bool
 	IgnoreRecursiveError bool
@@ -110,20 +118,28 @@ type ListPage struct {
 
 type Entry struct {
 	FullPath        string            `json:"FullPath"`
+	Mtime           time.Time         `json:"Mtime"`
+	Crtime          time.Time         `json:"Crtime"`
 	Mode            int64             `json:"Mode"`
 	Mime            string            `json:"Mime"`
 	Replication     string            `json:"Replication"`
 	Collection      string            `json:"Collection"`
 	TtlSec          int64             `json:"TtlSec"`
+	DiskType        string            `json:"DiskType"`
 	UserName        string            `json:"UserName"`
 	GroupNames      []string          `json:"GroupNames"`
 	SymlinkTarget   string            `json:"SymlinkTarget"`
+	MD5             string            `json:"Md5"`
 	FileSize        int64             `json:"FileSize"`
+	Rdev            int64             `json:"Rdev"`
+	Inode           uint64            `json:"Inode"`
 	Extended        map[string][]byte `json:"Extended"`
 	Content         []byte            `json:"Content"`
 	Chunks          []Chunk           `json:"chunks"`
 	HardLinkID      string            `json:"HardLinkId"`
 	HardLinkCounter int64             `json:"HardLinkCounter"`
+	Remote          any               `json:"Remote"`
+	Quota           int64             `json:"Quota"`
 }
 
 type Chunk struct {
@@ -131,8 +147,15 @@ type Chunk struct {
 	Size         int64  `json:"size"`
 	Mtime        int64  `json:"mtime"`
 	ETag         string `json:"e_tag"`
+	FID          FID    `json:"fid"`
 	IsCompressed bool   `json:"is_compressed"`
 	IsGzipped    bool   `json:"is_gzipped"`
+}
+
+type FID struct {
+	VolumeID int64  `json:"volume_id"`
+	FileKey  uint64 `json:"file_key"`
+	Cookie   uint32 `json:"cookie"`
 }
 
 func New(config Config) (*Client, error) {
@@ -305,6 +328,14 @@ func (c *Client) Head(ctx context.Context, path string) (*HeadResult, error) {
 	}, nil
 }
 
+func (c *Client) Tags(ctx context.Context, path string) (map[string]string, error) {
+	head, err := c.Head(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return head.Tags, nil
+}
+
 func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entry, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -321,6 +352,39 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 		ContentLength: -1,
 	}, &out)
 	return &out, err
+}
+
+func (c *Client) Walk(ctx context.Context, path string, opts WalkOptions, fn func(Entry) error) error {
+	if fn == nil {
+		return fmt.Errorf("filer: walk callback is required")
+	}
+	lastFileName := opts.LastFileName
+	for {
+		page, err := c.ListPage(ctx, path, ListOptions{
+			Limit:              opts.Limit,
+			LastFileName:       lastFileName,
+			NamePattern:        opts.NamePattern,
+			NamePatternExclude: opts.NamePatternExclude,
+		})
+		if err != nil {
+			return err
+		}
+		for _, entry := range page.Entries {
+			if err := fn(entry); err != nil {
+				return err
+			}
+		}
+		if !page.ShouldDisplayLoadMore || len(page.Entries) == 0 {
+			return nil
+		}
+		if page.LastFileName == "" {
+			return fmt.Errorf("filer: list page missing last file name")
+		}
+		if page.LastFileName == lastFileName {
+			return fmt.Errorf("filer: list page repeated last file name %q", page.LastFileName)
+		}
+		lastFileName = page.LastFileName
+	}
 }
 
 func (c *Client) ListPage(ctx context.Context, path string, opts ListOptions) (*ListPage, error) {

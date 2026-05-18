@@ -5,6 +5,7 @@ package filer_test
 import (
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +63,24 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 	}
 	if head.Header.Get("Seaweed-Project") != "sdk" {
 		t.Fatalf("Seaweed-Project = %q, want sdk", head.Header.Get("Seaweed-Project"))
+	}
+	tags, err := client.Filer().Tags(ctx, "/advanced/moved.txt")
+	if err != nil {
+		t.Fatalf("Tags() error = %v", err)
+	}
+	if tags["Project"] != "sdk" {
+		t.Fatalf("Tags()[Project] = %q, want sdk", tags["Project"])
+	}
+	walked := []string{}
+	err = client.Filer().Walk(ctx, "/advanced", filer.WalkOptions{Limit: 1}, func(entry filer.Entry) error {
+		walked = append(walked, entry.FullPath)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk() error = %v", err)
+	}
+	if !slices.Contains(walked, "/advanced/source.txt") || !slices.Contains(walked, "/advanced/moved.txt") {
+		t.Fatalf("Walk() paths = %#v", walked)
 	}
 	if err := client.Filer().DeleteTags(ctx, "/advanced/moved.txt", "Project"); err != nil {
 		t.Fatalf("DeleteTags() error = %v", err)

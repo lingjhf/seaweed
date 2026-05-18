@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lingjhf/seaweed/filer"
 	"github.com/lingjhf/seaweed/internal/httpx"
@@ -127,7 +128,7 @@ func TestAppendBuildsRequest(t *testing.T) {
 	}
 }
 
-func TestListBuildsJSONRequest(t *testing.T) {
+func TestListPageBuildsJSONRequest(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,10 +162,120 @@ func TestListBuildsJSONRequest(t *testing.T) {
 		NamePatternExclude: "*.tmp",
 	})
 	if err != nil {
-		t.Fatalf("List() error = %v", err)
+		t.Fatalf("ListPage() error = %v", err)
 	}
 	if len(resp.Entries) != 1 {
 		t.Fatalf("Entries len = %d, want 1", len(resp.Entries))
+	}
+}
+
+func TestWalkPaginatesAndStopsOnCallbackError(t *testing.T) {
+	t.Parallel()
+
+	calls := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/docs/" {
+			t.Fatalf("path = %s, want /docs/", r.URL.Path)
+		}
+		query := r.URL.Query()
+		assertQuery(t, query.Get("limit"), "1")
+		assertQuery(t, query.Get("namePattern"), "*.txt")
+		calls = append(calls, query.Get("lastFileName"))
+		switch query.Get("lastFileName") {
+		case "":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Entries": []map[string]any{
+					{"FullPath": "/docs/a.txt"},
+				},
+				"LastFileName":          "a.txt",
+				"ShouldDisplayLoadMore": true,
+			})
+		case "a.txt":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Entries": []map[string]any{
+					{"FullPath": "/docs/b.txt"},
+				},
+				"LastFileName":          "b.txt",
+				"ShouldDisplayLoadMore": false,
+			})
+		default:
+			t.Fatalf("unexpected lastFileName %q", query.Get("lastFileName"))
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	paths := []string{}
+	err := client.Walk(context.Background(), "/docs", filer.WalkOptions{
+		Limit:       1,
+		NamePattern: "*.txt",
+	}, func(entry filer.Entry) error {
+		paths = append(paths, entry.FullPath)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk() error = %v", err)
+	}
+	if strings.Join(paths, ",") != "/docs/a.txt,/docs/b.txt" {
+		t.Fatalf("walk paths = %#v", paths)
+	}
+	if strings.Join(calls, ",") != ",a.txt" {
+		t.Fatalf("lastFileName calls = %#v", calls)
+	}
+
+	stop := errors.New("stop")
+	err = client.Walk(context.Background(), "/docs", filer.WalkOptions{
+		Limit:       1,
+		NamePattern: "*.txt",
+	}, func(entry filer.Entry) error {
+		return stop
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("Walk() error = %v, want stop", err)
+	}
+}
+
+func TestWalkValidationAndPaginationErrors(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("lastFileName") {
+		case "":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Entries": []map[string]any{
+					{"FullPath": "/docs/a.txt"},
+				},
+				"ShouldDisplayLoadMore": true,
+			})
+		case "repeat":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Entries": []map[string]any{
+					{"FullPath": "/docs/b.txt"},
+				},
+				"LastFileName":          "repeat",
+				"ShouldDisplayLoadMore": true,
+			})
+		default:
+			t.Fatalf("unexpected lastFileName %q", r.URL.Query().Get("lastFileName"))
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	if err := client.Walk(context.Background(), "/docs", filer.WalkOptions{}, nil); err == nil {
+		t.Fatal("Walk() error = nil, want callback error")
+	}
+	err := client.Walk(context.Background(), "/docs", filer.WalkOptions{}, func(entry filer.Entry) error {
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing last file name") {
+		t.Fatalf("Walk() error = %v, want missing last file name", err)
+	}
+	err = client.Walk(context.Background(), "/docs", filer.WalkOptions{LastFileName: "repeat"}, func(entry filer.Entry) error {
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "repeated last file name") {
+		t.Fatalf("Walk() error = %v, want repeated last file name", err)
 	}
 }
 
@@ -186,9 +297,26 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 			assertQuery(t, r.URL.Query().Get("resolveManifest"), "true")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"FullPath": "/docs/report.txt",
+				"Mtime":    "2026-05-18T12:00:00Z",
+				"Crtime":   "2026-05-18T11:00:00Z",
+				"Mode":     420,
+				"DiskType": "ssd",
+				"Md5":      "checksum",
 				"FileSize": 5,
+				"Rdev":     7,
+				"Inode":    9,
+				"Quota":    11,
 				"chunks": []map[string]any{
-					{"file_id": "7,abc", "size": 5, "e_tag": "tag"},
+					{
+						"file_id": "7,abc",
+						"size":    5,
+						"e_tag":   "tag",
+						"fid": map[string]any{
+							"volume_id": 7,
+							"file_key":  123,
+							"cookie":    456,
+						},
+					},
 				},
 			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/docs/report.txt":
@@ -232,12 +360,29 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	if head.Tags["Owner"] != "sdk" {
 		t.Fatalf("Tags[Owner] = %q, want sdk", head.Tags["Owner"])
 	}
+	tags, err := client.Tags(context.Background(), "/docs/report.txt")
+	if err != nil {
+		t.Fatalf("Tags() error = %v", err)
+	}
+	if tags["Owner"] != "sdk" {
+		t.Fatalf("Tags()[Owner] = %q, want sdk", tags["Owner"])
+	}
 	entry, err := client.Stat(context.Background(), "/docs/report.txt", filer.StatOptions{ResolveManifest: true})
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
 	if entry.FullPath != "/docs/report.txt" || entry.FileSize != 5 || len(entry.Chunks) != 1 {
 		t.Fatalf("Stat() = %+v, want decoded entry", entry)
+	}
+	wantMtime := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
+	if !entry.Mtime.Equal(wantMtime) || entry.DiskType != "ssd" || entry.MD5 != "checksum" {
+		t.Fatalf("Stat() metadata = %+v, want typed metadata", entry)
+	}
+	if entry.Rdev != 7 || entry.Inode != 9 || entry.Quota != 11 {
+		t.Fatalf("Stat() numeric metadata = %+v", entry)
+	}
+	if entry.Chunks[0].FID.VolumeID != 7 || entry.Chunks[0].FID.FileKey != 123 || entry.Chunks[0].FID.Cookie != 456 {
+		t.Fatalf("Stat() chunk fid = %+v", entry.Chunks[0].FID)
 	}
 	if err := client.Delete(context.Background(), "/docs/report.txt", filer.DeleteOptions{
 		Recursive:            true,
@@ -334,6 +479,11 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 		t.Fatalf("Head() = %v, nil, want status error", header)
 	}
 	assertHTTPStatus(t, err, http.StatusNotFound)
+	if _, err := client.Tags(context.Background(), "/missing.txt"); err == nil {
+		t.Fatal("Tags() error = nil, want status error")
+	} else {
+		assertHTTPStatus(t, err, http.StatusNotFound)
+	}
 	if err := client.Delete(context.Background(), "/missing.txt", filer.DeleteOptions{}); err == nil {
 		t.Fatal("Delete() error = nil, want status error")
 	} else {
