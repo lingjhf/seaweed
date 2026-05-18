@@ -41,9 +41,11 @@ make test
 make test-race
 make vet
 WEED_BINARY=./weed make integration
+COVER_MIN=62.0 WEED_BINARY=./weed make coverage
 ```
 
 Integration tests require a real SeaweedFS `weed` binary. The test harness resolves `WEED_BINARY` first and then project-root `./weed`.
+Coverage gates report combined production coverage from unit and integration profiles, excluding `examples/*` and `internal/testweed`.
 
 ## Notes
 
