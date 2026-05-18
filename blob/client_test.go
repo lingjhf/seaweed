@@ -263,6 +263,39 @@ func TestGetHeadDeleteLookupCacheAndInvalidate(t *testing.T) {
 	}
 }
 
+func TestHeadAndDeleteInvalidateLookupCacheOnErrors(t *testing.T) {
+	t.Parallel()
+
+	volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "volume unavailable", http.StatusInternalServerError)
+	}))
+	defer volumeServer.Close()
+
+	var lookups atomic.Int32
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lookups.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"locations": []map[string]string{
+				{
+					"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+				},
+			},
+		})
+	}))
+	defer masterServer.Close()
+
+	client := newTestClient(t, masterServer, false)
+	if _, err := client.Head(context.Background(), "9,abc"); err == nil {
+		t.Fatal("Head() error = nil, want status error")
+	}
+	if err := client.Delete(context.Background(), "9,abc"); err == nil {
+		t.Fatal("Delete() error = nil, want status error")
+	}
+	if lookups.Load() != 2 {
+		t.Fatalf("lookups = %d, want cache invalidated between Head and Delete", lookups.Load())
+	}
+}
+
 func TestLookupErrors(t *testing.T) {
 	t.Parallel()
 

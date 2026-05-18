@@ -2,6 +2,7 @@ package tus_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -326,6 +327,91 @@ func TestResumeSeeksToOffset(t *testing.T) {
 	}
 }
 
+func TestResumeReturnsSeekError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			w.Header().Set("Upload-Offset", "5")
+			w.Header().Set("Upload-Length", "10")
+			w.WriteHeader(http.StatusOK)
+		case http.MethodPatch:
+			t.Fatal("PATCH should not be called when seek fails")
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.Resume(context.Background(), "/.tus/.uploads/abc", failingReadSeeker{}, tus.ResumeOptions{})
+	if err == nil {
+		t.Fatal("Resume() error = nil, want seek error")
+	}
+	if !strings.Contains(err.Error(), "seek to offset 5") {
+		t.Fatalf("Resume() error = %q, want offset context", err.Error())
+	}
+}
+
+func TestResumeAlreadyCompleteSkipsPatch(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			w.Header().Set("Upload-Offset", "5")
+			w.Header().Set("Upload-Length", "5")
+			w.WriteHeader(http.StatusOK)
+		case http.MethodPatch:
+			t.Fatal("PATCH should not be called for a completed upload")
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	status, err := client.Resume(context.Background(), "/.tus/.uploads/abc", strings.NewReader("hello"), tus.ResumeOptions{})
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if status.Offset != 5 || status.Size != 5 {
+		t.Fatalf("Resume() = %+v, want complete status", status)
+	}
+}
+
+func TestUploadReturnsCreateError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	if _, err := client.Upload(context.Background(), "/file", strings.NewReader("hello"), tus.UploadOptions{
+		Size:      5,
+		ChunkSize: 3,
+	}); err == nil {
+		t.Fatal("Upload() error = nil, want create error")
+	}
+}
+
+func TestPatchReturnsStatusError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "conflict", http.StatusConflict)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	if _, err := client.Patch(context.Background(), "/.tus/.uploads/abc", 0, strings.NewReader("hello"), 5); err == nil {
+		t.Fatal("Patch() error = nil, want status error")
+	}
+}
+
 func TestValidationAndResponseErrors(t *testing.T) {
 	t.Parallel()
 
@@ -429,4 +515,14 @@ func newTestClient(t *testing.T, server *httptest.Server) *tus.Client {
 		t.Fatalf("tus.New() error = %v", err)
 	}
 	return client
+}
+
+type failingReadSeeker struct{}
+
+func (failingReadSeeker) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (failingReadSeeker) Seek(int64, int) (int64, error) {
+	return 0, errors.New("seek failed")
 }

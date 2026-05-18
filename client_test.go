@@ -57,6 +57,34 @@ func TestNewHTTPClientUsesTunedTransport(t *testing.T) {
 	}
 }
 
+func TestNewHTTPClientZeroConfigUsesDefaults(t *testing.T) {
+	t.Parallel()
+
+	client := seaweed.NewHTTPClient(seaweed.HTTPClientConfig{})
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.MaxIdleConns != 256 {
+		t.Fatalf("MaxIdleConns = %d, want 256", transport.MaxIdleConns)
+	}
+	if transport.MaxIdleConnsPerHost != 128 {
+		t.Fatalf("MaxIdleConnsPerHost = %d, want 128", transport.MaxIdleConnsPerHost)
+	}
+	if transport.IdleConnTimeout != 90*time.Second {
+		t.Fatalf("IdleConnTimeout = %s, want 90s", transport.IdleConnTimeout)
+	}
+	if transport.TLSHandshakeTimeout != 10*time.Second {
+		t.Fatalf("TLSHandshakeTimeout = %s, want 10s", transport.TLSHandshakeTimeout)
+	}
+	if transport.ExpectContinueTimeout != time.Second {
+		t.Fatalf("ExpectContinueTimeout = %s, want 1s", transport.ExpectContinueTimeout)
+	}
+	if client.Timeout != 0 {
+		t.Fatalf("Timeout = %s, want 0", client.Timeout)
+	}
+}
+
 func TestNewHTTPClientUsesOverrides(t *testing.T) {
 	t.Parallel()
 

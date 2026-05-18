@@ -63,3 +63,22 @@ func TestEndpointSetURLUsesActiveEndpoint(t *testing.T) {
 		t.Fatalf("URL() = %q", got)
 	}
 }
+
+func TestEndpointSetURLsReturnsCopy(t *testing.T) {
+	t.Parallel()
+
+	endpoints, err := httpx.NewEndpointSet([]string{
+		"http://one.example.test",
+		"http://two.example.test",
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	urls := endpoints.URLs()
+	urls[0] = "http://mutated.example.test"
+
+	got := endpoints.URLs()
+	if got[0] != "http://one.example.test" {
+		t.Fatalf("URLs()[0] = %q, want original endpoint", got[0])
+	}
+}

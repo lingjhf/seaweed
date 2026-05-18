@@ -396,6 +396,162 @@ func TestDoEndpointFailsOverTransportErrors(t *testing.T) {
 	}
 }
 
+func TestDoEndpointReturnsLastRetryableResponse(t *testing.T) {
+	t.Parallel()
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "first", http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "second", http.StatusBadGateway)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSet([]string{first.URL, second.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: first.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", resp.StatusCode)
+	}
+}
+
+func TestDoEndpointRequiresEndpoints(t *testing.T) {
+	t.Parallel()
+
+	client := httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient})
+	if _, err := client.DoEndpoint(context.Background(), nil, "/status", httpx.Request{Method: http.MethodGet}); err == nil {
+		t.Fatal("DoEndpoint() error = nil, want endpoints error")
+	}
+}
+
+func TestDecodeJSONEndpoint(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("path = %q, want /status", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	var out struct {
+		OK bool `json:"ok"`
+	}
+	err = client.DecodeJSONEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}, &out)
+	if err != nil {
+		t.Fatalf("DecodeJSONEndpoint() error = %v", err)
+	}
+	if !out.OK {
+		t.Fatal("DecodeJSONEndpoint() decoded OK = false, want true")
+	}
+}
+
+func TestDecodeJSONEndpointReturnsHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	err = client.DecodeJSONEndpoint(context.Background(), endpoints, "/missing", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}, nil)
+	if err == nil {
+		t.Fatal("DecodeJSONEndpoint() error = nil, want status error")
+	}
+	var httpErr *httpx.Error
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T, want *httpx.Error", err)
+	}
+	if httpErr.URL != server.URL+"/missing" {
+		t.Fatalf("error URL = %q", httpErr.URL)
+	}
+}
+
+func TestCheckStatusEndpoint(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	err = client.CheckStatusEndpoint(context.Background(), endpoints, "/delete", httpx.Request{
+		Method:        http.MethodDelete,
+		ContentLength: -1,
+	}, http.StatusAccepted)
+	if err != nil {
+		t.Fatalf("CheckStatusEndpoint() error = %v", err)
+	}
+}
+
+func TestCheckStatusEndpointReturnsHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	err = client.CheckStatusEndpoint(context.Background(), endpoints, "/missing", httpx.Request{
+		Method:        http.MethodDelete,
+		ContentLength: -1,
+	}, http.StatusNoContent)
+	if err == nil {
+		t.Fatal("CheckStatusEndpoint() error = nil, want status error")
+	}
+	var httpErr *httpx.Error
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T, want *httpx.Error", err)
+	}
+	if httpErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", httpErr.StatusCode)
+	}
+}
+
 func TestDecodeJSON(t *testing.T) {
 	t.Parallel()
 
