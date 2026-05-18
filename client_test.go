@@ -3,6 +3,8 @@ package seaweed_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -174,6 +176,44 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 	}
 }
 
+func TestNewPropagatesRoundRobinEndpointPolicy(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		if r.Method != http.MethodHead || r.URL.Path != "/cluster/healthz" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer first.Close()
+	var secondCalls int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer second.Close()
+
+	client, err := seaweed.New(seaweed.Config{
+		MasterURLs: []string{first.URL, second.URL},
+		EndpointPolicy: seaweed.EndpointPolicy{
+			Mode: seaweed.EndpointPolicyRoundRobin,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for range 4 {
+		if err := client.Master().Health(context.Background()); err != nil {
+			t.Fatalf("Health() error = %v", err)
+		}
+	}
+	if firstCalls != 2 || secondCalls != 2 {
+		t.Fatalf("master health calls = %d/%d, want 2/2", firstCalls, secondCalls)
+	}
+}
+
 func TestNewRejectsNilHTTPClient(t *testing.T) {
 	t.Parallel()
 
@@ -234,6 +274,20 @@ func TestNewRejectsInvalidURLs(t *testing.T) {
 				t.Fatal("New() error = nil, want invalid url error")
 			}
 		})
+	}
+}
+
+func TestNewRejectsInvalidEndpointPolicy(t *testing.T) {
+	t.Parallel()
+
+	_, err := seaweed.New(seaweed.Config{
+		MasterURLs: []string{"http://127.0.0.1:9333"},
+		EndpointPolicy: seaweed.EndpointPolicy{
+			Mode: "random",
+		},
+	})
+	if err == nil {
+		t.Fatal("New() error = nil, want invalid endpoint policy error")
 	}
 }
 

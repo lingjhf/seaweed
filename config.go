@@ -9,6 +9,15 @@ import (
 )
 
 type RetryPolicy = httpx.RetryPolicy
+type EndpointPolicy = httpx.EndpointPolicy
+type EndpointPolicyMode = httpx.EndpointPolicyMode
+type EndpointHealthCheckPolicy = httpx.EndpointHealthCheckPolicy
+type EndpointCircuitBreakerPolicy = httpx.EndpointCircuitBreakerPolicy
+
+const (
+	EndpointPolicyFailover   = httpx.EndpointPolicyFailover
+	EndpointPolicyRoundRobin = httpx.EndpointPolicyRoundRobin
+)
 
 type Config struct {
 	MasterURLs      []string
@@ -24,6 +33,12 @@ type Config struct {
 	UserAgent       string
 	UsePublicURLs   bool
 	Retry           RetryPolicy
+
+	EndpointPolicy       EndpointPolicy
+	MasterEndpointPolicy EndpointPolicy
+	VolumeEndpointPolicy EndpointPolicy
+	FilerEndpointPolicy  EndpointPolicy
+	TUSEndpointPolicy    EndpointPolicy
 }
 
 type Option func(*options)
@@ -54,6 +69,12 @@ func DefaultRetryPolicy() RetryPolicy {
 	return RetryPolicy{
 		MaxAttempts: 3,
 		Wait:        100 * time.Millisecond,
+	}
+}
+
+func DefaultEndpointPolicy() EndpointPolicy {
+	return EndpointPolicy{
+		Mode: EndpointPolicyFailover,
 	}
 }
 

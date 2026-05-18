@@ -13,14 +13,16 @@ import (
 )
 
 type Config struct {
-	BaseURLs    []string
-	HTTPClient  *http.Client
-	UserAgent   string
-	BearerToken string
-	Retry       RetryPolicy
+	BaseURLs       []string
+	HTTPClient     *http.Client
+	UserAgent      string
+	BearerToken    string
+	Retry          RetryPolicy
+	EndpointPolicy EndpointPolicy
 }
 
 type RetryPolicy = httpx.RetryPolicy
+type EndpointPolicy = httpx.EndpointPolicy
 
 type Client struct {
 	endpoints *httpx.EndpointSet
@@ -117,7 +119,7 @@ func New(config Config) (*Client, error) {
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
 	}
-	endpoints, err := httpx.NewEndpointSet(config.BaseURLs)
+	endpoints, err := httpx.NewEndpointSetWithPolicy(config.BaseURLs, config.EndpointPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("filer: invalid base urls: %w", err)
 	}

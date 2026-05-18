@@ -16,16 +16,18 @@ import (
 const Version = "1.0.0"
 
 type Config struct {
-	FilerURLs   []string
-	BasePath    string
-	HTTPClient  *http.Client
-	UserAgent   string
-	BearerToken string
-	Retry       RetryPolicy
-	ContentType string
+	FilerURLs      []string
+	BasePath       string
+	HTTPClient     *http.Client
+	UserAgent      string
+	BearerToken    string
+	Retry          RetryPolicy
+	ContentType    string
+	EndpointPolicy EndpointPolicy
 }
 
 type RetryPolicy = httpx.RetryPolicy
+type EndpointPolicy = httpx.EndpointPolicy
 
 type Client struct {
 	endpoints   *httpx.EndpointSet
@@ -74,7 +76,7 @@ func New(config Config) (*Client, error) {
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
 	}
-	endpoints, err := httpx.NewEndpointSet(config.FilerURLs)
+	endpoints, err := httpx.NewEndpointSetWithPolicy(config.FilerURLs, config.EndpointPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("tus: invalid filer urls: %w", err)
 	}

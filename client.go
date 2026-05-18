@@ -50,6 +50,23 @@ func New(config Config, opts ...Option) (*Client, error) {
 	if config.Retry.MaxAttempts == 0 {
 		config.Retry = DefaultRetryPolicy()
 	}
+	endpointPolicy, err := httpx.NormalizeEndpointPolicy(config.EndpointPolicy)
+	if err != nil {
+		return nil, fmt.Errorf("seaweed: invalid endpoint policy: %w", err)
+	}
+	config.EndpointPolicy = endpointPolicy
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.MasterEndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid master endpoint policy: %w", err)
+	}
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.VolumeEndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid volume endpoint policy: %w", err)
+	}
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.FilerEndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid filer endpoint policy: %w", err)
+	}
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.TUSEndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid tus endpoint policy: %w", err)
+	}
 
 	masterURLs, err := httpx.NormalizeBaseURLs(config.MasterURLs)
 	if err != nil {
@@ -89,11 +106,12 @@ func New(config Config, opts ...Option) (*Client, error) {
 	}
 
 	masterClient, err := master.New(master.Config{
-		BaseURLs:    config.MasterURLs,
-		HTTPClient:  applied.httpClient,
-		UserAgent:   config.UserAgent,
-		BearerToken: config.BearerToken,
-		Retry:       config.Retry,
+		BaseURLs:       config.MasterURLs,
+		HTTPClient:     applied.httpClient,
+		UserAgent:      config.UserAgent,
+		BearerToken:    config.BearerToken,
+		Retry:          config.Retry,
+		EndpointPolicy: endpointPolicyOrDefault(config.MasterEndpointPolicy, config.EndpointPolicy),
 	})
 	if err != nil {
 		return nil, err
@@ -105,11 +123,12 @@ func New(config Config, opts ...Option) (*Client, error) {
 	}
 	if len(config.VolumeURLs) > 0 {
 		client.volume, err = volume.New(volume.Config{
-			BaseURLs:    config.VolumeURLs,
-			HTTPClient:  applied.httpClient,
-			UserAgent:   config.UserAgent,
-			BearerToken: config.BearerToken,
-			Retry:       config.Retry,
+			BaseURLs:       config.VolumeURLs,
+			HTTPClient:     applied.httpClient,
+			UserAgent:      config.UserAgent,
+			BearerToken:    config.BearerToken,
+			Retry:          config.Retry,
+			EndpointPolicy: endpointPolicyOrDefault(config.VolumeEndpointPolicy, config.EndpointPolicy),
 		})
 		if err != nil {
 			return nil, err
@@ -128,23 +147,25 @@ func New(config Config, opts ...Option) (*Client, error) {
 	}
 	if len(config.FilerURLs) > 0 {
 		client.filer, err = filer.New(filer.Config{
-			BaseURLs:    config.FilerURLs,
-			HTTPClient:  applied.httpClient,
-			UserAgent:   config.UserAgent,
-			BearerToken: config.BearerToken,
-			Retry:       config.Retry,
+			BaseURLs:       config.FilerURLs,
+			HTTPClient:     applied.httpClient,
+			UserAgent:      config.UserAgent,
+			BearerToken:    config.BearerToken,
+			Retry:          config.Retry,
+			EndpointPolicy: endpointPolicyOrDefault(config.FilerEndpointPolicy, config.EndpointPolicy),
 		})
 		if err != nil {
 			return nil, err
 		}
 		client.tus, err = tus.New(tus.Config{
-			FilerURLs:   config.FilerURLs,
-			BasePath:    config.TUSBasePath,
-			HTTPClient:  applied.httpClient,
-			UserAgent:   config.UserAgent,
-			BearerToken: config.BearerToken,
-			Retry:       config.Retry,
-			ContentType: "application/offset+octet-stream",
+			FilerURLs:      config.FilerURLs,
+			BasePath:       config.TUSBasePath,
+			HTTPClient:     applied.httpClient,
+			UserAgent:      config.UserAgent,
+			BearerToken:    config.BearerToken,
+			Retry:          config.Retry,
+			ContentType:    "application/offset+octet-stream",
+			EndpointPolicy: endpointPolicyOrDefault(config.TUSEndpointPolicy, config.EndpointPolicy),
 		})
 		if err != nil {
 			return nil, err
@@ -222,4 +243,11 @@ func (c *Client) awsConfig(ctx context.Context) (aws.Config, error) {
 		)),
 		awsconfig.WithHTTPClient(c.http),
 	)
+}
+
+func endpointPolicyOrDefault(policy EndpointPolicy, fallback EndpointPolicy) EndpointPolicy {
+	if policy.Mode == "" && !policy.HealthCheck.Enabled && !policy.CircuitBreaker.Enabled {
+		return fallback
+	}
+	return policy
 }

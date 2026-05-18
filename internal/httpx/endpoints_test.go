@@ -82,3 +82,75 @@ func TestEndpointSetURLsReturnsCopy(t *testing.T) {
 		t.Fatalf("URLs()[0] = %q, want original endpoint", got[0])
 	}
 }
+
+func TestEndpointSetCandidatesFailoverUsesActiveEndpoint(t *testing.T) {
+	t.Parallel()
+
+	endpoints, err := httpx.NewEndpointSet([]string{
+		"http://one.example.test",
+		"http://two.example.test",
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	endpoints.MarkSuccess(1)
+
+	candidates := endpoints.Candidates("/status")
+	got := []string{candidates[0].URL, candidates[1].URL}
+	want := []string{
+		"http://two.example.test/status",
+		"http://one.example.test/status",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidates[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestEndpointSetCandidatesRoundRobin(t *testing.T) {
+	t.Parallel()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{
+		"http://one.example.test",
+		"http://two.example.test",
+		"http://three.example.test",
+	}, httpx.EndpointPolicy{Mode: httpx.EndpointPolicyRoundRobin})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+
+	got := []string{
+		endpoints.Candidates("/status")[0].URL,
+		endpoints.Candidates("/status")[0].URL,
+		endpoints.Candidates("/status")[0].URL,
+		endpoints.Candidates("/status")[0].URL,
+	}
+	want := []string{
+		"http://one.example.test/status",
+		"http://two.example.test/status",
+		"http://three.example.test/status",
+		"http://one.example.test/status",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("round robin candidate %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestNormalizeEndpointPolicy(t *testing.T) {
+	t.Parallel()
+
+	policy, err := httpx.NormalizeEndpointPolicy(httpx.EndpointPolicy{})
+	if err != nil {
+		t.Fatalf("NormalizeEndpointPolicy() error = %v", err)
+	}
+	if policy.Mode != httpx.EndpointPolicyFailover {
+		t.Fatalf("Mode = %q, want failover", policy.Mode)
+	}
+
+	if _, err := httpx.NormalizeEndpointPolicy(httpx.EndpointPolicy{Mode: "random"}); err == nil {
+		t.Fatal("NormalizeEndpointPolicy() error = nil, want unsupported mode error")
+	}
+}

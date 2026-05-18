@@ -5,12 +5,43 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
+
+type EndpointPolicyMode string
+
+const (
+	EndpointPolicyFailover   EndpointPolicyMode = "failover"
+	EndpointPolicyRoundRobin EndpointPolicyMode = "round-robin"
+)
+
+type EndpointHealthCheckPolicy struct {
+	Enabled          bool
+	Interval         time.Duration
+	Timeout          time.Duration
+	FailureThreshold int
+	SuccessThreshold int
+}
+
+type EndpointCircuitBreakerPolicy struct {
+	Enabled             bool
+	FailureThreshold    int
+	OpenTimeout         time.Duration
+	HalfOpenMaxRequests int
+}
+
+type EndpointPolicy struct {
+	Mode           EndpointPolicyMode
+	HealthCheck    EndpointHealthCheckPolicy
+	CircuitBreaker EndpointCircuitBreakerPolicy
+}
 
 type EndpointSet struct {
 	mu     sync.RWMutex
 	urls   []string
 	active int
+	next   int
+	policy EndpointPolicy
 }
 
 type EndpointCandidate struct {
@@ -19,11 +50,31 @@ type EndpointCandidate struct {
 }
 
 func NewEndpointSet(rawURLs []string) (*EndpointSet, error) {
+	return NewEndpointSetWithPolicy(rawURLs, EndpointPolicy{})
+}
+
+func NewEndpointSetWithPolicy(rawURLs []string, policy EndpointPolicy) (*EndpointSet, error) {
 	urls, err := NormalizeBaseURLs(rawURLs)
 	if err != nil {
 		return nil, err
 	}
-	return &EndpointSet{urls: urls}, nil
+	policy, err = NormalizeEndpointPolicy(policy)
+	if err != nil {
+		return nil, err
+	}
+	return &EndpointSet{urls: urls, policy: policy}, nil
+}
+
+func NormalizeEndpointPolicy(policy EndpointPolicy) (EndpointPolicy, error) {
+	if policy.Mode == "" {
+		policy.Mode = EndpointPolicyFailover
+	}
+	switch policy.Mode {
+	case EndpointPolicyFailover, EndpointPolicyRoundRobin:
+	default:
+		return EndpointPolicy{}, fmt.Errorf("httpx: unsupported endpoint policy mode %q", policy.Mode)
+	}
+	return policy, nil
 }
 
 func NormalizeBaseURLs(rawURLs []string) ([]string, error) {
@@ -80,12 +131,17 @@ func (s *EndpointSet) URL(path string) string {
 }
 
 func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	candidates := make([]EndpointCandidate, 0, len(s.urls))
+	start := s.active
+	if s.policy.Mode == EndpointPolicyRoundRobin {
+		start = s.next
+		s.next = (s.next + 1) % len(s.urls)
+	}
 	for offset := range s.urls {
-		index := (s.active + offset) % len(s.urls)
+		index := (start + offset) % len(s.urls)
 		candidates = append(candidates, EndpointCandidate{
 			Index: index,
 			URL:   s.urls[index] + path,
@@ -98,7 +154,7 @@ func (s *EndpointSet) MarkSuccess(index int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if index >= 0 && index < len(s.urls) {
+	if s.policy.Mode == EndpointPolicyFailover && index >= 0 && index < len(s.urls) {
 		s.active = index
 	}
 }

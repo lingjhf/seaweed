@@ -320,6 +320,44 @@ func TestDoEndpointFailsOverRetryableRequests(t *testing.T) {
 	}
 }
 
+func TestDoEndpointRoundRobinStartsAtNextEndpoint(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer first.Close()
+	var secondCalls int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{first.URL, second.URL}, httpx.EndpointPolicy{
+		Mode: httpx.EndpointPolicyRoundRobin,
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: first.Client()})
+	for range 4 {
+		resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+			Method:        http.MethodGet,
+			ContentLength: -1,
+		})
+		if err != nil {
+			t.Fatalf("DoEndpoint() error = %v", err)
+		}
+		resp.Body.Close()
+	}
+	if firstCalls != 2 || secondCalls != 2 {
+		t.Fatalf("round robin calls = %d/%d, want 2/2", firstCalls, secondCalls)
+	}
+}
+
 func TestDoEndpointDoesNotFailOverNonRetryableRequests(t *testing.T) {
 	t.Parallel()
 
