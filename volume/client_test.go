@@ -211,6 +211,8 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 					},
 				},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
+			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

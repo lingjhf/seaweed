@@ -125,7 +125,7 @@ func New(config Config) (*Client, error) {
 			Retry:       config.Retry,
 		}),
 	}
-	client.endpoints.StartHealthCheck(config.HTTPClient, http.MethodGet, "/status")
+	client.endpoints.StartHealthCheck(config.HTTPClient, http.MethodGet, "/healthz")
 	return client, nil
 }
 
@@ -217,9 +217,9 @@ func (c *Client) Status(ctx context.Context) (*StatusResponse, error) {
 	return &out, err
 }
 
-// Health checks the volume server status endpoint.
+// Health checks the volume server health endpoint.
 func (c *Client) Health(ctx context.Context) error {
-	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/status", httpx.Request{
+	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/healthz", httpx.Request{
 		Method:        http.MethodGet,
 		ContentLength: -1,
 	}, http.StatusOK)

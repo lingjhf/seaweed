@@ -28,6 +28,10 @@ func TestVolumePutGetDeleteIntegration(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
+	if err := client.Volume().Health(ctx); err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+
 	assigned, err := client.Master().Assign(ctx, seaweedMasterAssignOptions())
 	if err != nil {
 		t.Fatalf("Assign() error = %v", err)
