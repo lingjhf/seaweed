@@ -245,6 +245,55 @@ func TestUploadMultipartDefaultsFieldNameAndContentType(t *testing.T) {
 	}
 }
 
+func TestWriteRequestsReturnJSONAPIErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(*filer.Client) (*filer.WriteResult, error)
+	}{
+		{
+			name: "put",
+			call: func(client *filer.Client) (*filer.WriteResult, error) {
+				return client.Put(context.Background(), "/docs/report.txt", strings.NewReader("x"), filer.WriteOptions{ContentLength: 1})
+			},
+		},
+		{
+			name: "append",
+			call: func(client *filer.Client) (*filer.WriteResult, error) {
+				return client.Append(context.Background(), "/docs/report.txt", strings.NewReader("x"), filer.AppendOptions{ContentLength: 1})
+			},
+		},
+		{
+			name: "upload multipart",
+			call: func(client *filer.Client) (*filer.WriteResult, error) {
+				return client.UploadMultipart(context.Background(), "/uploads", "report.txt", strings.NewReader("x"), filer.MultipartUploadOptions{})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"error": "write failed",
+				})
+			}))
+			defer server.Close()
+
+			client := newTestClient(t, server)
+			_, err := tt.call(client)
+			if err == nil {
+				t.Fatal("write error = nil, want API error")
+			}
+			assertAPIError(t, err, "write failed")
+		})
+	}
+}
+
 func TestListPageBuildsJSONRequest(t *testing.T) {
 	t.Parallel()
 
@@ -711,5 +760,16 @@ func assertHTTPStatus(t *testing.T, err error, want int) {
 	}
 	if httpErr.StatusCode != want {
 		t.Fatalf("status = %d, want %d", httpErr.StatusCode, want)
+	}
+}
+
+func assertAPIError(t *testing.T, err error, want string) {
+	t.Helper()
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != want {
+		t.Fatalf("APIError.Message = %q, want %q", apiErr.Message, want)
 	}
 }

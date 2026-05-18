@@ -3,6 +3,7 @@ package blob_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lingjhf/seaweed/blob"
+	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 )
 
@@ -211,6 +213,22 @@ func TestPutReturnsAssignAndUploadErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("assign api error", func(t *testing.T) {
+		masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "no writable volumes",
+			})
+		}))
+		defer masterServer.Close()
+
+		client := newTestClient(t, masterServer, false)
+		_, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{})
+		if err == nil {
+			t.Fatal("Put() error = nil, want assign API error")
+		}
+		assertAPIError(t, err, "no writable volumes")
+	})
+
 	t.Run("upload error", func(t *testing.T) {
 		volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "volume busy", http.StatusServiceUnavailable)
@@ -228,6 +246,30 @@ func TestPutReturnsAssignAndUploadErrors(t *testing.T) {
 		if _, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{}); err == nil {
 			t.Fatal("Put() error = nil, want upload error")
 		}
+	})
+
+	t.Run("upload api error", func(t *testing.T) {
+		volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "write failed",
+			})
+		}))
+		defer volumeServer.Close()
+		masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"fid": "9,abc",
+				"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+			})
+		}))
+		defer masterServer.Close()
+
+		client := newTestClient(t, masterServer, false)
+		_, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{})
+		if err == nil {
+			t.Fatal("Put() error = nil, want upload API error")
+		}
+		assertAPIError(t, err, "write failed")
 	})
 }
 
@@ -752,5 +794,16 @@ func assertQuery(t *testing.T, got string, want string) {
 	t.Helper()
 	if got != want {
 		t.Fatalf("query value = %q, want %q", got, want)
+	}
+}
+
+func assertAPIError(t *testing.T, err error, want string) {
+	t.Helper()
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != want {
+		t.Fatalf("APIError.Message = %q, want %q", apiErr.Message, want)
 	}
 }

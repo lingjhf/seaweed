@@ -97,10 +97,9 @@ type MultipartUploadOptions struct {
 
 // WriteResult is returned by successful Put, Append, and UploadMultipart requests.
 type WriteResult struct {
-	Name  string `json:"name"`
-	Size  int64  `json:"size"`
-	ETag  string `json:"eTag"`
-	Error string `json:"error,omitempty"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	ETag string `json:"eTag"`
 }
 
 // HeadResult contains filer response headers and parsed SeaweedFS tags.

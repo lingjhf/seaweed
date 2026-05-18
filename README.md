@@ -345,6 +345,31 @@ if err != nil {
 fmt.Println(volumeStatus.Volumes.Free, volumeStatus.Volumes.Max)
 ```
 
+### Error Handling
+
+Use `errors.As` to distinguish HTTP status failures from SeaweedFS JSON API errors.
+
+```go
+_, err = client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader(data), filer.WriteOptions{
+    ContentLength: int64(len(data)),
+})
+if err != nil {
+    var apiErr *seaweed.APIError
+    if errors.As(err, &apiErr) {
+        fmt.Println(apiErr.Message)
+        return err
+    }
+
+    var httpErr *seaweed.Error
+    if errors.As(err, &httpErr) {
+        fmt.Println(httpErr.StatusCode, httpErr.Body)
+        return err
+    }
+
+    return err
+}
+```
+
 ## Validation
 
 The full local gate used before every commit is:
