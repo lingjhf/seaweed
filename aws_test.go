@@ -20,7 +20,7 @@ func TestS3RequiresEndpointAndCredentials(t *testing.T) {
 
 	client, err = seaweed.New(seaweed.Config{
 		MasterURLs: []string{"http://127.0.0.1:9333"},
-		S3URL:      "http://127.0.0.1:8333",
+		S3URLs:     []string{"http://127.0.0.1:8333"},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -43,7 +43,7 @@ func TestIAMRequiresEndpointOrS3AndCredentials(t *testing.T) {
 
 	client, err = seaweed.New(seaweed.Config{
 		MasterURLs: []string{"http://127.0.0.1:9333"},
-		IAMURL:     "http://127.0.0.1:8333",
+		IAMURLs:    []string{"http://127.0.0.1:8333"},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

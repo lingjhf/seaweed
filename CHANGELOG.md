@@ -7,6 +7,7 @@ This project is in the `0.x` development line. Minor releases can include breaki
 ### Breaking Changes
 
 - Replaced native single-endpoint fields with endpoint lists for master, volume, filer, and TUS clients.
+- Replaced `S3URL` and `IAMURL` with `S3URLs` and `IAMURLs`.
 - Redesigned the Filer resource API:
   - `filer.PutOptions` is now `filer.WriteOptions`.
   - `filer.WriteResponse` is now `filer.WriteResult`.

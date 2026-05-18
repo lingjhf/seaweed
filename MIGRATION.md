@@ -4,7 +4,7 @@ This guide covers breaking changes in the current `0.x` development line.
 
 ## Endpoint Configuration
 
-Native clients now use endpoint lists instead of single endpoint fields.
+Clients now use endpoint lists instead of single endpoint fields.
 
 ```go
 client, err := seaweed.New(seaweed.Config{
@@ -13,7 +13,7 @@ client, err := seaweed.New(seaweed.Config{
 })
 ```
 
-Use `EndpointPolicy` to configure native endpoint selection and health behavior. S3 and IAM still use single AWS SDK endpoints.
+Use `EndpointPolicy` to configure endpoint selection and health behavior.
 
 ```go
 client, err := seaweed.New(seaweed.Config{
@@ -21,6 +21,15 @@ client, err := seaweed.New(seaweed.Config{
     EndpointPolicy: seaweed.EndpointPolicy{
         Mode: seaweed.EndpointPolicyRoundRobin,
     },
+})
+```
+
+S3 and IAM endpoints also moved to lists. Replace `S3URL` with `S3URLs` and `IAMURL` with `IAMURLs`. When `IAMURLs` is empty, `IAM()` uses `S3URLs`.
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{"http://127.0.0.1:9333"},
+    S3URLs:     []string{"http://127.0.0.1:8333"},
 })
 ```
 

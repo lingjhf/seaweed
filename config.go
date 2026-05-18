@@ -24,8 +24,8 @@ type Config struct {
 	VolumeURLs           []string
 	FilerURLs            []string
 	TUSBasePath          string
-	S3URL                string
-	IAMURL               string
+	S3URLs               []string
+	IAMURLs              []string
 	Region               string
 	AccessKeyID          string
 	SecretAccessKey      string

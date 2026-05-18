@@ -90,19 +90,19 @@ func New(config Config, opts ...Option) (*Client, error) {
 		}
 		config.FilerURLs = filerURLs
 	}
-	if config.S3URL != "" {
-		s3URL, err := httpx.NormalizeBaseURL(config.S3URL)
+	if len(config.S3URLs) > 0 {
+		s3URLs, err := httpx.NormalizeBaseURLs(config.S3URLs)
 		if err != nil {
-			return nil, fmt.Errorf("seaweed: invalid s3 url: %w", err)
+			return nil, fmt.Errorf("seaweed: invalid s3 urls: %w", err)
 		}
-		config.S3URL = s3URL
+		config.S3URLs = s3URLs
 	}
-	if config.IAMURL != "" {
-		iamURL, err := httpx.NormalizeBaseURL(config.IAMURL)
+	if len(config.IAMURLs) > 0 {
+		iamURLs, err := httpx.NormalizeBaseURLs(config.IAMURLs)
 		if err != nil {
-			return nil, fmt.Errorf("seaweed: invalid iam url: %w", err)
+			return nil, fmt.Errorf("seaweed: invalid iam urls: %w", err)
 		}
-		config.IAMURL = iamURL
+		config.IAMURLs = iamURLs
 	}
 	if config.Region == "" {
 		config.Region = "us-east-1"
@@ -222,33 +222,33 @@ func (c *Client) Close() {
 }
 
 func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
-	if c.config.S3URL == "" {
-		return nil, fmt.Errorf("seaweed: s3 url is required")
+	if len(c.config.S3URLs) == 0 {
+		return nil, fmt.Errorf("seaweed: s3 urls are required")
 	}
 	cfg, err := c.awsConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(c.config.S3URL)
+		o.BaseEndpoint = aws.String(c.config.S3URLs[0])
 		o.UsePathStyle = true
 	}), nil
 }
 
 func (c *Client) IAM(ctx context.Context) (*iam.Client, error) {
-	endpoint := c.config.IAMURL
-	if endpoint == "" {
-		endpoint = c.config.S3URL
+	endpoints := c.config.IAMURLs
+	if len(endpoints) == 0 {
+		endpoints = c.config.S3URLs
 	}
-	if endpoint == "" {
-		return nil, fmt.Errorf("seaweed: iam url or s3 url is required")
+	if len(endpoints) == 0 {
+		return nil, fmt.Errorf("seaweed: iam urls or s3 urls are required")
 	}
 	cfg, err := c.awsConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return iam.NewFromConfig(cfg, func(o *iam.Options) {
-		o.BaseEndpoint = aws.String(endpoint)
+		o.BaseEndpoint = aws.String(endpoints[0])
 	}), nil
 }
 

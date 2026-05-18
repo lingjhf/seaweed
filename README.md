@@ -28,7 +28,7 @@ client, err := seaweed.New(seaweed.Config{
     MasterURLs:  []string{"http://127.0.0.1:9333"},
     FilerURLs:   []string{"http://127.0.0.1:8888"},
     TUSBasePath: "/.tus",
-    S3URL:       "http://127.0.0.1:8333",
+    S3URLs:      []string{"http://127.0.0.1:8333"},
 
     AccessKeyID:     "seaweed_admin",
     SecretAccessKey: "seaweed_secret",
@@ -46,7 +46,7 @@ Direct package clients such as `master.New`, `volume.New`, `filer.New`, and `tus
 
 By default, `seaweed.New` uses an SDK HTTP client with a larger idle connection pool than Go's default transport. Use `seaweed.NewHTTPClient` when passing the same tuned client to direct package constructors.
 
-Native SeaweedFS clients accept endpoint lists, for example `MasterURLs`, `VolumeURLs`, `FilerURLs`, and direct client `BaseURLs`. S3/IAM clients still use a single AWS SDK endpoint.
+SeaweedFS clients accept endpoint lists, for example `MasterURLs`, `VolumeURLs`, `FilerURLs`, `S3URLs`, `IAMURLs`, and direct client `BaseURLs`. If `IAMURLs` is empty, IAM uses `S3URLs` because SeaweedFS serves IAM from the S3 service by default.
 
 Endpoint lists use failover by default. Enable round-robin when you want retryable read requests to start from a different endpoint on each call:
 
@@ -312,5 +312,5 @@ See `CHANGELOG.md`, `MIGRATION.md`, and `RELEASE.md` before cutting a release.
 ## Notes
 
 - S3/IAM uses AWS SDK for Go v2 and path-style S3 addressing.
-- IAM defaults to the S3 endpoint because SeaweedFS embeds IAM in the S3 server by default.
+- IAM defaults to `S3URLs` because SeaweedFS embeds IAM in the S3 server by default.
 - TUS implements SeaweedFS-supported TUS 1.0.0 operations: creation, creation-with-upload, offset upload, resume, and termination.

@@ -131,8 +131,8 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 		VolumeURLs:           []string{"http://127.0.0.1:8080/volume/"},
 		FilerURLs:            []string{"http://127.0.0.1:8888/filer/"},
 		TUSBasePath:          "uploads",
-		S3URL:                "http://127.0.0.1:8333/s3/",
-		IAMURL:               "http://127.0.0.1:8333/iam/",
+		S3URLs:               []string{"http://127.0.0.1:8333/s3/"},
+		IAMURLs:              []string{"http://127.0.0.1:8333/iam/"},
 		AccessKeyID:          "access",
 		SecretAccessKey:      "secret",
 		UserAgent:            "seaweed-test",
@@ -157,11 +157,11 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 	if len(config.FilerURLs) != 1 || config.FilerURLs[0] != "http://127.0.0.1:8888/filer" {
 		t.Fatalf("FilerURLs = %#v", config.FilerURLs)
 	}
-	if config.S3URL != "http://127.0.0.1:8333/s3" {
-		t.Fatalf("S3URL = %q", config.S3URL)
+	if len(config.S3URLs) != 1 || config.S3URLs[0] != "http://127.0.0.1:8333/s3" {
+		t.Fatalf("S3URLs = %#v", config.S3URLs)
 	}
-	if config.IAMURL != "http://127.0.0.1:8333/iam" {
-		t.Fatalf("IAMURL = %q", config.IAMURL)
+	if len(config.IAMURLs) != 1 || config.IAMURLs[0] != "http://127.0.0.1:8333/iam" {
+		t.Fatalf("IAMURLs = %#v", config.IAMURLs)
 	}
 	if config.Region != "us-east-1" {
 		t.Fatalf("Region = %q, want us-east-1", config.Region)
@@ -320,14 +320,14 @@ func TestNewRejectsInvalidURLs(t *testing.T) {
 			name: "s3",
 			config: seaweed.Config{
 				MasterURLs: []string{"http://127.0.0.1:9333"},
-				S3URL:      "127.0.0.1:8333",
+				S3URLs:     []string{"127.0.0.1:8333"},
 			},
 		},
 		{
 			name: "iam",
 			config: seaweed.Config{
 				MasterURLs: []string{"http://127.0.0.1:9333"},
-				IAMURL:     "127.0.0.1:8333",
+				IAMURLs:    []string{"127.0.0.1:8333"},
 			},
 		},
 	}
@@ -382,7 +382,7 @@ func TestIAMFallsBackToS3Endpoint(t *testing.T) {
 
 	client, err := seaweed.New(seaweed.Config{
 		MasterURLs:      []string{"http://127.0.0.1:9333"},
-		S3URL:           "http://127.0.0.1:8333",
+		S3URLs:          []string{"http://127.0.0.1:8333"},
 		AccessKeyID:     "access",
 		SecretAccessKey: "secret",
 	})

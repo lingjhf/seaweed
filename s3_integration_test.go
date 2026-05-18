@@ -24,7 +24,7 @@ func TestS3AndIAMIntegration(t *testing.T) {
 	client, err := seaweed.New(seaweed.Config{
 		MasterURLs:      []string{cluster.MasterURL},
 		FilerURLs:       []string{cluster.FilerURL},
-		S3URL:           cluster.S3URL,
+		S3URLs:          []string{cluster.S3URL},
 		AccessKeyID:     "seaweed_admin",
 		SecretAccessKey: "seaweed_secret",
 		Region:          "us-east-1",
