@@ -3,6 +3,7 @@ package volume_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,38 @@ func TestPutSendsRawBody(t *testing.T) {
 	}
 }
 
+func TestPutSendsOptionalHeaders(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Encoding") != "gzip" {
+			t.Fatalf("Content-Encoding = %q, want gzip", r.Header.Get("Content-Encoding"))
+		}
+		if r.Header.Get("Content-MD5") != "md5" {
+			t.Fatalf("Content-MD5 = %q, want md5", r.Header.Get("Content-MD5"))
+		}
+		if r.Header.Get("Content-Disposition") != `inline; filename="a\"b.txt"` {
+			t.Fatalf("Content-Disposition = %q", r.Header.Get("Content-Disposition"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name": "3,abc",
+			"size": 5,
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server)
+	_, err := client.Put(context.Background(), "/3,abc", stringsReader("hello"), volume.PutOptions{
+		ContentEncoding: "gzip",
+		ContentMD5:      "md5",
+		Filename:        `a"b.txt`,
+		ContentLength:   5,
+	})
+	if err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+}
+
 func TestGetReturnsStream(t *testing.T) {
 	t.Parallel()
 
@@ -90,6 +123,155 @@ func TestGetReturnsStream(t *testing.T) {
 	}
 }
 
+func TestGetSendsRange(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") != "bytes=1-3" {
+			t.Fatalf("Range = %q, want bytes=1-3", r.Header.Get("Range"))
+		}
+		_, _ = w.Write([]byte("ell"))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server)
+	resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{Range: "bytes=1-3"})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "ell" {
+		t.Fatalf("body = %q, want ell", body)
+	}
+}
+
+func TestHeadDeleteStatusAndHealth(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/3,abc":
+			w.Header().Set("ETag", `"tag"`)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodDelete && r.URL.Path == "/3,abc":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Version": "test",
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server)
+	header, err := client.Head(context.Background(), "3,abc")
+	if err != nil {
+		t.Fatalf("Head() error = %v", err)
+	}
+	if header.Get("ETag") != `"tag"` {
+		t.Fatalf("ETag = %q, want tag", header.Get("ETag"))
+	}
+	if err := client.Delete(context.Background(), "3,abc"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	status, err := client.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status["Version"] != "test" {
+		t.Fatalf("Status()[Version] = %v, want test", status["Version"])
+	}
+	if err := client.Health(context.Background()); err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+}
+
+func TestHTTPErrorResponses(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server)
+	resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{})
+	if err == nil {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		t.Fatal("Get() error = nil, want error")
+	}
+	assertHTTPStatus(t, err, http.StatusNotFound)
+	header, err := client.Head(context.Background(), "3,abc")
+	if err == nil {
+		t.Fatalf("Head() = %v, nil, want error", header)
+	}
+	assertHTTPStatus(t, err, http.StatusNotFound)
+	if err := client.Delete(context.Background(), "3,abc"); err == nil {
+		t.Fatal("Delete() error = nil, want error")
+	} else {
+		assertHTTPStatus(t, err, http.StatusNotFound)
+	}
+}
+
+func TestBaseURLAndFileIDValidation(t *testing.T) {
+	t.Parallel()
+
+	clientWithoutBaseURL := volume.New(volume.Config{
+		HTTP: httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient}),
+	})
+	if _, err := clientWithoutBaseURL.Put(context.Background(), "3,abc", stringsReader("hello"), volume.PutOptions{}); err == nil {
+		t.Fatal("Put() error = nil, want base url error")
+	}
+	if _, err := clientWithoutBaseURL.Status(context.Background()); err == nil {
+		t.Fatal("Status() error = nil, want base url error")
+	}
+	if err := clientWithoutBaseURL.Health(context.Background()); err == nil {
+		t.Fatal("Health() error = nil, want base url error")
+	}
+
+	clientWithBaseURL := volume.New(volume.Config{
+		BaseURL: "http://example.test",
+		HTTP:    httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient}),
+	})
+	if _, err := clientWithBaseURL.Get(context.Background(), "", volume.GetOptions{}); err == nil {
+		t.Fatal("Get() error = nil, want file id error")
+	}
+	if _, err := clientWithBaseURL.Head(context.Background(), ""); err == nil {
+		t.Fatal("Head() error = nil, want file id error")
+	}
+	if err := clientWithBaseURL.Delete(context.Background(), ""); err == nil {
+		t.Fatal("Delete() error = nil, want file id error")
+	}
+}
+
 func stringsReader(s string) io.Reader {
 	return strings.NewReader(s)
+}
+
+func newTestClient(server *httptest.Server) *volume.Client {
+	return volume.New(volume.Config{
+		BaseURL: server.URL,
+		HTTP: httpx.NewClient(httpx.Config{
+			HTTPClient: server.Client(),
+		}),
+	})
+}
+
+func assertHTTPStatus(t *testing.T, err error, want int) {
+	t.Helper()
+	var httpErr *httpx.Error
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T, want *httpx.Error", err)
+	}
+	if httpErr.StatusCode != want {
+		t.Fatalf("status = %d, want %d", httpErr.StatusCode, want)
+	}
 }
