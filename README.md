@@ -9,7 +9,7 @@ This project is in the `0.x` development line. Public APIs can change between mi
 - Master client: assign, lookup, status, health, volume management helpers.
 - Volume client: direct put, get, head, delete, status.
 - Blob client: assign/lookup plus volume upload, read failover, head, delete.
-- Filer client: put, append, get, head, stat, list, mkdir, delete, copy, move, tagging.
+- Filer client: put, append, multipart upload, get, head, stat, list, mkdir, delete, copy, move, tagging.
 - TUS client: native SeaweedFS resumable upload support for `/.tus`.
 - S3/IAM clients: AWS SDK v2 clients configured for SeaweedFS endpoints.
 
@@ -190,6 +190,16 @@ data := "hello filer"
 _, err := client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader(data), filer.WriteOptions{
     ContentType:   "text/plain",
     ContentLength: int64(len(data)),
+    SeaweedHeaders: map[string]string{
+        "Owner": "sdk",
+    },
+})
+if err != nil {
+    return err
+}
+
+_, err = client.Filer().UploadMultipart(ctx, "/sdk/uploads", "multipart.txt", strings.NewReader(data), filer.MultipartUploadOptions{
+    FileContentType: "text/plain",
     SeaweedHeaders: map[string]string{
         "Owner": "sdk",
     },

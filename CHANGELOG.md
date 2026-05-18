@@ -20,6 +20,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Tuned default HTTP transport with larger idle connection pools.
 - Filer typed metadata fields, `Tags`, and paginated `Walk`.
 - Filer entries now expose `Uid` and `Gid` metadata as `UID` and `GID`.
+- Filer now supports streaming multipart uploads with `UploadMultipart`.
 - TUS creation-with-upload by default, with chunked upload still available through `ChunkSize`.
 - Benchmarks for HTTP, Blob cached lookup, path escaping, and TUS upload paths.
 - CI target aligned with unit, race, and vet checks.

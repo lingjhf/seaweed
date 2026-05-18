@@ -128,6 +128,123 @@ func TestAppendBuildsRequest(t *testing.T) {
 	}
 }
 
+func TestUploadMultipartBuildsStreamingRequest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/uploads/" {
+			t.Fatalf("path = %s, want /uploads/", r.URL.Path)
+		}
+		query := r.URL.Query()
+		assertQuery(t, query.Get("collection"), "photos")
+		assertQuery(t, query.Get("replication"), "001")
+		assertQuery(t, query.Get("ttl"), "3d")
+		assertQuery(t, query.Get("maxMB"), "32")
+		assertQuery(t, query.Get("mode"), "0755")
+		assertQuery(t, query.Get("fsync"), "true")
+		assertQuery(t, query.Get("saveInside"), "true")
+		assertQuery(t, query.Get("skipCheckParentDir"), "true")
+		if r.Header.Get("Seaweed-Owner") != "sdk" {
+			t.Fatalf("Seaweed-Owner = %q, want sdk", r.Header.Get("Seaweed-Owner"))
+		}
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data; boundary=") {
+			t.Fatalf("Content-Type = %q, want multipart form", r.Header.Get("Content-Type"))
+		}
+
+		multipartReader, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader() error = %v", err)
+		}
+		part, err := multipartReader.NextPart()
+		if err != nil {
+			t.Fatalf("NextPart() error = %v", err)
+		}
+		if part.FormName() != "asset" {
+			t.Fatalf("FormName = %q, want asset", part.FormName())
+		}
+		if part.FileName() != "report.txt" {
+			t.Fatalf("FileName = %q, want report.txt", part.FileName())
+		}
+		if part.Header.Get("Content-Type") != "text/plain" {
+			t.Fatalf("part Content-Type = %q, want text/plain", part.Header.Get("Content-Type"))
+		}
+		body, err := io.ReadAll(part)
+		if err != nil {
+			t.Fatalf("read part: %v", err)
+		}
+		if string(body) != "hello multipart" {
+			t.Fatalf("part body = %q, want hello multipart", body)
+		}
+		if next, err := multipartReader.NextPart(); err != io.EOF || next != nil {
+			t.Fatalf("NextPart() = %v, %v; want EOF", next, err)
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name": "report.txt",
+			"size": len("hello multipart"),
+			"eTag": "etag",
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	resp, err := client.UploadMultipart(context.Background(), "/uploads", "report.txt", strings.NewReader("hello multipart"), filer.MultipartUploadOptions{
+		Collection:         "photos",
+		Replication:        "001",
+		TTL:                "3d",
+		MaxMB:              32,
+		Mode:               "0755",
+		Fsync:              true,
+		SaveInside:         true,
+		SkipCheckParentDir: true,
+		FileContentType:    "text/plain",
+		FieldName:          "asset",
+		SeaweedHeaders: map[string]string{
+			"Owner": "sdk",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadMultipart() error = %v", err)
+	}
+	if resp.Name != "report.txt" || resp.Size != int64(len("hello multipart")) || resp.ETag != "etag" {
+		t.Fatalf("UploadMultipart() = %+v, want decoded write result", resp)
+	}
+}
+
+func TestUploadMultipartDefaultsFieldNameAndContentType(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		multipartReader, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader() error = %v", err)
+		}
+		part, err := multipartReader.NextPart()
+		if err != nil {
+			t.Fatalf("NextPart() error = %v", err)
+		}
+		if part.FormName() != "file" {
+			t.Fatalf("FormName = %q, want file", part.FormName())
+		}
+		if part.Header.Get("Content-Type") != "application/octet-stream" {
+			t.Fatalf("part Content-Type = %q, want application/octet-stream", part.Header.Get("Content-Type"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name": "default.bin",
+			"size": 4,
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	if _, err := client.UploadMultipart(context.Background(), "/uploads", "default.bin", strings.NewReader("data"), filer.MultipartUploadOptions{}); err != nil {
+		t.Fatalf("UploadMultipart() error = %v", err)
+	}
+}
+
 func TestListPageBuildsJSONRequest(t *testing.T) {
 	t.Parallel()
 
@@ -526,6 +643,15 @@ func TestPathValidationForMutatingMethods(t *testing.T) {
 	}
 	if _, err := client.Append(context.Background(), "", strings.NewReader("x"), filer.AppendOptions{}); err == nil {
 		t.Fatal("Append() error = nil, want path error")
+	}
+	if _, err := client.UploadMultipart(context.Background(), "", "file.txt", strings.NewReader("x"), filer.MultipartUploadOptions{}); err == nil {
+		t.Fatal("UploadMultipart() error = nil, want path error")
+	}
+	if _, err := client.UploadMultipart(context.Background(), "/uploads", "", strings.NewReader("x"), filer.MultipartUploadOptions{}); err == nil {
+		t.Fatal("UploadMultipart() error = nil, want filename error")
+	}
+	if _, err := client.UploadMultipart(context.Background(), "/uploads", "file.txt", nil, filer.MultipartUploadOptions{}); err == nil {
+		t.Fatal("UploadMultipart() error = nil, want body error")
 	}
 	if err := client.Copy(context.Background(), "/src", ""); err == nil {
 		t.Fatal("Copy() error = nil, want destination path error")

@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -74,7 +77,25 @@ type AppendOptions struct {
 	ContentLength      int64
 }
 
-// WriteResult is returned by successful Put and Append requests.
+// MultipartUploadOptions configures UploadMultipart requests to the filer.
+type MultipartUploadOptions struct {
+	DataCenter         string
+	Rack               string
+	DataNode           string
+	Collection         string
+	Replication        string
+	TTL                string
+	MaxMB              int
+	Mode               string
+	Fsync              bool
+	SaveInside         bool
+	SkipCheckParentDir bool
+	FileContentType    string
+	FieldName          string
+	SeaweedHeaders     map[string]string
+}
+
+// WriteResult is returned by successful Put, Append, and UploadMultipart requests.
 type WriteResult struct {
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
@@ -213,6 +234,38 @@ func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts A
 	return c.write(ctx, path, body, writeOptionsFromAppend(opts), "append")
 }
 
+// UploadMultipart uploads body to dirPath using a streaming multipart form.
+func (c *Client) UploadMultipart(ctx context.Context, dirPath string, filename string, body io.Reader, opts MultipartUploadOptions) (*WriteResult, error) {
+	if strings.TrimSpace(filename) == "" {
+		return nil, fmt.Errorf("filer: filename is required")
+	}
+	if body == nil {
+		return nil, fmt.Errorf("filer: body is required")
+	}
+	resourcePath, err := c.resourcePath(ensureTrailingSlash(dirPath))
+	if err != nil {
+		return nil, err
+	}
+
+	reader, writer := io.Pipe()
+	multipartWriter := multipart.NewWriter(writer)
+	go writeMultipartBody(writer, multipartWriter, filename, body, opts)
+
+	header := http.Header{}
+	header.Set("Content-Type", multipartWriter.FormDataContentType())
+	addSeaweedHeaders(header, opts.SeaweedHeaders)
+
+	var out WriteResult
+	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
+		Method:        http.MethodPost,
+		Query:         multipartQuery(opts),
+		Header:        header,
+		Body:          reader,
+		ContentLength: -1,
+	}, &out)
+	return &out, err
+}
+
 func (c *Client) write(ctx context.Context, path string, body io.Reader, opts WriteOptions, op string) (*WriteResult, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -271,9 +324,7 @@ func (c *Client) SetTags(ctx context.Context, path string, tags map[string]strin
 	query := url.Values{}
 	query.Set("tagging", "")
 	header := http.Header{}
-	for key, value := range tags {
-		header.Set("Seaweed-"+strings.TrimPrefix(key, "Seaweed-"), value)
-	}
+	addSeaweedHeaders(header, tags)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPut,
 		Query:         query,
@@ -488,14 +539,34 @@ func putQuery(opts WriteOptions) url.Values {
 	return query
 }
 
+func multipartQuery(opts MultipartUploadOptions) url.Values {
+	return putQuery(WriteOptions{
+		DataCenter:         opts.DataCenter,
+		Rack:               opts.Rack,
+		DataNode:           opts.DataNode,
+		Collection:         opts.Collection,
+		Replication:        opts.Replication,
+		TTL:                opts.TTL,
+		MaxMB:              opts.MaxMB,
+		Mode:               opts.Mode,
+		Fsync:              opts.Fsync,
+		SaveInside:         opts.SaveInside,
+		SkipCheckParentDir: opts.SkipCheckParentDir,
+	})
+}
+
 func putHeader(opts WriteOptions) http.Header {
 	header := http.Header{}
 	addHeader(header, "Content-Type", opts.ContentType)
 	addHeader(header, "Content-Disposition", opts.ContentDisposition)
-	for key, value := range opts.SeaweedHeaders {
+	addSeaweedHeaders(header, opts.SeaweedHeaders)
+	return header
+}
+
+func addSeaweedHeaders(header http.Header, values map[string]string) {
+	for key, value := range values {
 		header.Set("Seaweed-"+strings.TrimPrefix(key, "Seaweed-"), value)
 	}
-	return header
 }
 
 func writeOptionsFromAppend(opts AppendOptions) WriteOptions {
@@ -516,6 +587,36 @@ func writeOptionsFromAppend(opts AppendOptions) WriteOptions {
 		SeaweedHeaders:     opts.SeaweedHeaders,
 		ContentLength:      opts.ContentLength,
 	}
+}
+
+func writeMultipartBody(pipeWriter *io.PipeWriter, multipartWriter *multipart.Writer, filename string, body io.Reader, opts MultipartUploadOptions) {
+	fieldName := opts.FieldName
+	if strings.TrimSpace(fieldName) == "" {
+		fieldName = "file"
+	}
+	contentType := opts.FileContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+		"name":     fieldName,
+		"filename": filename,
+	}))
+	header.Set("Content-Type", contentType)
+
+	part, err := multipartWriter.CreatePart(header)
+	if err == nil {
+		_, err = io.Copy(part, body)
+	}
+	if closeErr := multipartWriter.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = pipeWriter.CloseWithError(err)
+		return
+	}
+	_ = pipeWriter.Close()
 }
 
 func seaweedTags(header http.Header) map[string]string {

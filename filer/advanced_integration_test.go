@@ -44,6 +44,34 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 	}
 	assertAdvancedContent(t, ctx, client, "/advanced/source.txt", "hello-world")
 
+	if err := client.Filer().Mkdir(ctx, "/advanced/uploads"); err != nil {
+		t.Fatalf("Mkdir(upload dir) error = %v", err)
+	}
+	_, err = client.Filer().UploadMultipart(ctx, "/advanced/uploads", "multipart.txt", strings.NewReader("multipart-data"), filer.MultipartUploadOptions{
+		FileContentType: "text/plain",
+		SeaweedHeaders: map[string]string{
+			"Origin": "multipart",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadMultipart() error = %v", err)
+	}
+	assertAdvancedContent(t, ctx, client, "/advanced/uploads/multipart.txt", "multipart-data")
+	multipartHead, err := client.Filer().Head(ctx, "/advanced/uploads/multipart.txt")
+	if err != nil {
+		t.Fatalf("Head(multipart) error = %v", err)
+	}
+	if multipartHead.Header.Get("Seaweed-Origin") != "multipart" {
+		t.Fatalf("Seaweed-Origin = %q, want multipart", multipartHead.Header.Get("Seaweed-Origin"))
+	}
+	multipartEntry, err := client.Filer().Stat(ctx, "/advanced/uploads/multipart.txt", filer.StatOptions{})
+	if err != nil {
+		t.Fatalf("Stat(multipart) error = %v", err)
+	}
+	if multipartEntry.FullPath != "/advanced/uploads/multipart.txt" || multipartEntry.FileSize != int64(len("multipart-data")) {
+		t.Fatalf("multipart stat = %+v, want uploaded path and size", multipartEntry)
+	}
+
 	if err := client.Filer().Copy(ctx, "/advanced/source.txt", "/advanced/copy.txt"); err != nil {
 		t.Fatalf("Copy() error = %v", err)
 	}
