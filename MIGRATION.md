@@ -24,6 +24,18 @@ client, err := seaweed.New(seaweed.Config{
 })
 ```
 
+Blob reads use master lookup results as a per-volume location cache. Configure `BlobEndpointPolicy` when the Blob read path needs its own selection behavior, and `BlobLocationCacheTTL` when lookup locations should be refreshed periodically.
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{"http://master-1:9333", "http://master-2:9333"},
+    BlobEndpointPolicy: seaweed.EndpointPolicy{
+        Mode: seaweed.EndpointPolicyRoundRobin,
+    },
+    BlobLocationCacheTTL: 30 * time.Second,
+})
+```
+
 ## Filer API
 
 The Filer client now uses a resource-operation API with explicit result and page types.
@@ -82,4 +94,3 @@ err := client.Filer().Walk(ctx, "/docs", filer.WalkOptions{Limit: 100}, func(ent
     return nil
 })
 ```
-

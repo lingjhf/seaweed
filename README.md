@@ -8,7 +8,7 @@ This project is in the `0.x` development line. Public APIs can change between mi
 
 - Master client: assign, lookup, status, health, volume management helpers.
 - Volume client: direct put, get, head, delete, status.
-- Blob client: assign/lookup plus volume upload, read, delete.
+- Blob client: assign/lookup plus volume upload, read failover, head, delete.
 - Filer client: put, append, get, head, stat, list, mkdir, delete, copy, move, tagging.
 - TUS client: native SeaweedFS resumable upload support for `/.tus`.
 - S3/IAM clients: AWS SDK v2 clients configured for SeaweedFS endpoints.
@@ -86,6 +86,27 @@ client, err := seaweed.New(seaweed.Config{
             OpenTimeout:      30 * time.Second,
         },
     },
+})
+if err != nil {
+    return err
+}
+defer client.Close()
+```
+
+Blob reads discover volume replicas through master lookup. `Get` and `Head` use all returned locations for read failover; `Delete` uses the selected endpoint only. Use `BlobEndpointPolicy` when the blob read path should differ from the global policy, and set `BlobLocationCacheTTL` when cached volume locations should refresh periodically.
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{"http://master-1:9333", "http://master-2:9333"},
+    BlobEndpointPolicy: seaweed.EndpointPolicy{
+        Mode: seaweed.EndpointPolicyRoundRobin,
+        CircuitBreaker: seaweed.EndpointCircuitBreakerPolicy{
+            Enabled:          true,
+            FailureThreshold: 2,
+            OpenTimeout:      10 * time.Second,
+        },
+    },
+    BlobLocationCacheTTL: 30 * time.Second,
 })
 if err != nil {
     return err

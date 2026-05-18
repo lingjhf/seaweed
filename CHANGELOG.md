@@ -18,11 +18,13 @@ This project is in the `0.x` development line. Minor releases can include breaki
 
 - Endpoint policy support for failover, round-robin, health checks, and circuit breakers.
 - Native endpoint failover for retryable requests.
+- Blob volume lookup cache now stores all master locations, supports read failover, `BlobEndpointPolicy`, and `BlobLocationCacheTTL`.
+- Concurrent Blob cache misses for the same volume are coalesced into one master lookup.
 - Circuit breaker half-open request limiting.
 - Tuned default HTTP transport with larger idle connection pools.
 - Filer typed metadata fields, `Tags`, and paginated `Walk`.
 - TUS creation-with-upload by default, with chunked upload still available through `ChunkSize`.
-- Benchmarks for HTTP, path escaping, and TUS upload paths.
+- Benchmarks for HTTP, Blob cached lookup, path escaping, and TUS upload paths.
 - CI target aligned with unit, race, and vet checks.
 
 ### Changed
@@ -33,4 +35,3 @@ This project is in the `0.x` development line. Minor releases can include breaki
 ### Fixed
 
 - Endpoint circuit breaker now enforces configured half-open request limits.
-
