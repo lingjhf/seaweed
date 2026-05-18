@@ -1,7 +1,7 @@
 .PHONY: test test-race vet integration coverage check check-full
 
 WEED_BINARY ?= ./weed
-COVER_MIN ?= 62.0
+COVER_MIN ?= 85.0
 
 test:
 	go test -count=1 ./...
