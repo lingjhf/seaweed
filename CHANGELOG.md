@@ -12,6 +12,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 ### Added
 
 - Master directory status now returns typed topology metadata.
+- Master volume status now returns typed volume placement metadata.
 - Endpoint policy support for failover, round-robin, health checks, and circuit breakers.
 - Native endpoint failover for retryable requests.
 - S3 and IAM endpoint lists now support round-robin, health checks, and circuit breakers through AWS SDK endpoint resolution.

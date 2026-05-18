@@ -337,6 +337,12 @@ if err != nil {
     return err
 }
 fmt.Println(dirStatus.Topology.Free, dirStatus.Topology.Max)
+
+volumeStatus, err := masterClient.VolumeStatus(ctx)
+if err != nil {
+    return err
+}
+fmt.Println(volumeStatus.Volumes.Free, volumeStatus.Volumes.Max)
 ```
 
 ## Validation

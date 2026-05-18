@@ -223,6 +223,42 @@ func TestClientStatusRequests(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"Version": "test",
+				"Volumes": map[string]any{
+					"Free": 5,
+					"Max":  9,
+					"DataCenters": map[string]any{
+						"DefaultDataCenter": map[string]any{
+							"DefaultRack": map[string]any{
+								"127.0.0.1:8080": []map[string]any{
+									{
+										"Id":   1,
+										"Size": 313888,
+										"ReplicaPlacement": map[string]any{
+											"SameRackCount":       2,
+											"DiffRackCount":       1,
+											"DiffDataCenterCount": 0,
+										},
+										"Ttl": map[string]any{
+											"Count": 3,
+											"Unit":  1,
+										},
+										"DiskType":          "ssd1",
+										"Collection":        "photos",
+										"Version":           3,
+										"FileCount":         4,
+										"DeleteCount":       1,
+										"DeletedByteCount":  8,
+										"ReadOnly":          true,
+										"CompactRevision":   2,
+										"ModifiedAtSecond":  1612388794,
+										"RemoteStorageName": "remote",
+										"RemoteStorageKey":  "key",
+									},
+								},
+							},
+						},
+					},
+				},
 			})
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -277,8 +313,31 @@ func TestClientStatusRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VolumeStatus() error = %v", err)
 	}
-	if volumeStatus["Version"] != "test" {
-		t.Fatalf("VolumeStatus()[Version] = %v, want test", volumeStatus["Version"])
+	if volumeStatus.Version != "test" {
+		t.Fatalf("VolumeStatus().Version = %q, want test", volumeStatus.Version)
+	}
+	if volumeStatus.Volumes.Free != 5 || volumeStatus.Volumes.Max != 9 {
+		t.Fatalf("VolumeStatus().Volumes capacity = %d/%d, want 5/9", volumeStatus.Volumes.Free, volumeStatus.Volumes.Max)
+	}
+	volumes := volumeStatus.Volumes.DataCenters["DefaultDataCenter"]["DefaultRack"]["127.0.0.1:8080"]
+	if len(volumes) != 1 {
+		t.Fatalf("VolumeStatus() volumes len = %d, want 1", len(volumes))
+	}
+	volume := volumes[0]
+	if volume.ID != 1 || volume.Size != 313888 || volume.Collection != "photos" || !volume.ReadOnly {
+		t.Fatalf("VolumeStatus() volume = %+v, want decoded volume", volume)
+	}
+	if volume.ReplicaPlacement.SameRackCount != 2 || volume.ReplicaPlacement.DiffRackCount != 1 || volume.ReplicaPlacement.DiffDataCenterCount != 0 {
+		t.Fatalf("VolumeStatus() replica placement = %+v, want decoded replica placement", volume.ReplicaPlacement)
+	}
+	if volume.TTL.Count != 3 || volume.TTL.Unit != 1 {
+		t.Fatalf("VolumeStatus() ttl = %+v, want decoded ttl", volume.TTL)
+	}
+	if volume.FileCount != 4 || volume.DeleteCount != 1 || volume.DeletedByteCount != 8 || volume.CompactRevision != 2 || volume.ModifiedAtSecond != 1612388794 {
+		t.Fatalf("VolumeStatus() counters = %+v, want decoded counters", volume)
+	}
+	if volume.RemoteStorageName != "remote" || volume.RemoteStorageKey != "key" {
+		t.Fatalf("VolumeStatus() remote storage = %q/%q, want remote/key", volume.RemoteStorageName, volume.RemoteStorageKey)
 	}
 }
 

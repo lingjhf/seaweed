@@ -174,6 +174,60 @@ type WritableVolumeLayout struct {
 	Writables   []int  `json:"writables"`
 }
 
+// VolumeStatusResponse describes volume placement returned by /vol/status.
+type VolumeStatusResponse struct {
+	Version string         `json:"Version"`
+	Volumes VolumeTopology `json:"Volumes"`
+}
+
+// VolumeTopology describes all volumes grouped by data center, rack, and node.
+type VolumeTopology struct {
+	DataCenters VolumeDataCenters `json:"DataCenters"`
+	Free        int               `json:"Free"`
+	Max         int               `json:"Max"`
+}
+
+// VolumeDataCenters maps data center IDs to racks.
+type VolumeDataCenters map[string]VolumeRacks
+
+// VolumeRacks maps rack IDs to volume server nodes.
+type VolumeRacks map[string]VolumeDataNodes
+
+// VolumeDataNodes maps volume server addresses to volumes.
+type VolumeDataNodes map[string][]VolumeInfo
+
+// VolumeInfo describes one volume reported by /vol/status.
+type VolumeInfo struct {
+	ID                int                    `json:"Id"`
+	Size              int64                  `json:"Size"`
+	ReplicaPlacement  VolumeReplicaPlacement `json:"ReplicaPlacement"`
+	TTL               VolumeTTL              `json:"Ttl"`
+	DiskType          string                 `json:"DiskType"`
+	Collection        string                 `json:"Collection"`
+	Version           int                    `json:"Version"`
+	FileCount         int64                  `json:"FileCount"`
+	DeleteCount       int64                  `json:"DeleteCount"`
+	DeletedByteCount  int64                  `json:"DeletedByteCount"`
+	ReadOnly          bool                   `json:"ReadOnly"`
+	CompactRevision   int                    `json:"CompactRevision"`
+	ModifiedAtSecond  int64                  `json:"ModifiedAtSecond"`
+	RemoteStorageName string                 `json:"RemoteStorageName"`
+	RemoteStorageKey  string                 `json:"RemoteStorageKey"`
+}
+
+// VolumeReplicaPlacement describes one volume's replication strategy.
+type VolumeReplicaPlacement struct {
+	SameRackCount       int `json:"SameRackCount"`
+	DiffRackCount       int `json:"DiffRackCount"`
+	DiffDataCenterCount int `json:"DiffDataCenterCount"`
+}
+
+// VolumeTTL describes one volume's time-to-live policy.
+type VolumeTTL struct {
+	Count int `json:"Count"`
+	Unit  int `json:"Unit"`
+}
+
 // Assign asks the master to allocate one or more file IDs.
 func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignResponse, error) {
 	query := url.Values{}
@@ -282,13 +336,13 @@ func (c *Client) DirStatus(ctx context.Context) (*DirStatusResponse, error) {
 	return &out, err
 }
 
-// VolumeStatus returns raw volume status data from the master.
-func (c *Client) VolumeStatus(ctx context.Context) (map[string]any, error) {
-	out := map[string]any{}
+// VolumeStatus returns volume placement status from the master.
+func (c *Client) VolumeStatus(ctx context.Context) (*VolumeStatusResponse, error) {
+	var out VolumeStatusResponse
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/vol/status", httpx.Request{
 		Method: http.MethodGet,
 	}, &out)
-	return out, err
+	return &out, err
 }
 
 // Close stops background endpoint health checks.

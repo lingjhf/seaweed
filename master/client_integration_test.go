@@ -4,6 +4,7 @@ package master_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,21 @@ func TestMasterAssignLookupIntegration(t *testing.T) {
 	}
 
 	volumeID := strings.Split(assigned.FID, ",")[0]
+	volumeIDInt, err := strconv.Atoi(volumeID)
+	if err != nil {
+		t.Fatalf("assigned volume id = %q, want integer: %v", volumeID, err)
+	}
+	volumeStatus, err := client.Master().VolumeStatus(ctx)
+	if err != nil {
+		t.Fatalf("VolumeStatus() error = %v", err)
+	}
+	if len(volumeStatus.Volumes.DataCenters) == 0 {
+		t.Fatal("VolumeStatus().Volumes.DataCenters is empty")
+	}
+	if !hasVolume(volumeStatus, volumeIDInt) {
+		t.Fatalf("VolumeStatus() does not contain assigned volume %d", volumeIDInt)
+	}
+
 	lookup, err := client.Master().Lookup(ctx, volumeID, master.LookupOptions{})
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
@@ -56,4 +72,19 @@ func TestMasterAssignLookupIntegration(t *testing.T) {
 	if len(lookup.Locations) == 0 {
 		t.Fatal("Lookup().Locations is empty")
 	}
+}
+
+func hasVolume(status *master.VolumeStatusResponse, volumeID int) bool {
+	for _, racks := range status.Volumes.DataCenters {
+		for _, nodes := range racks {
+			for _, volumes := range nodes {
+				for _, volume := range volumes {
+					if volume.ID == volumeID {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
