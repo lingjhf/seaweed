@@ -123,7 +123,7 @@ func New(config Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("filer: invalid base urls: %w", err)
 	}
-	return &Client{
+	client := &Client{
 		endpoints: endpoints,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
@@ -131,7 +131,9 @@ func New(config Config) (*Client, error) {
 			BearerToken: config.BearerToken,
 			Retry:       config.Retry,
 		}),
-	}, nil
+	}
+	client.endpoints.StartHealthCheck(config.HTTPClient, http.MethodGet, "/")
+	return client, nil
 }
 
 func (c *Client) Put(ctx context.Context, path string, body io.Reader, opts PutOptions) (*WriteResponse, error) {
@@ -426,4 +428,8 @@ func ensureTrailingSlash(path string) string {
 		return path
 	}
 	return path + "/"
+}
+
+func (c *Client) Close() {
+	c.endpoints.Close()
 }

@@ -91,7 +91,7 @@ func New(config Config) (*Client, error) {
 	if contentType == "" {
 		contentType = "application/offset+octet-stream"
 	}
-	return &Client{
+	client := &Client{
 		endpoints: endpoints,
 		basePath:  basePath,
 		http: httpx.NewClient(httpx.Config{
@@ -101,7 +101,9 @@ func New(config Config) (*Client, error) {
 			Retry:       config.Retry,
 		}),
 		contentType: contentType,
-	}, nil
+	}
+	client.endpoints.StartHealthCheck(config.HTTPClient, http.MethodOptions, basePath+"/")
+	return client, nil
 }
 
 func (c *Client) Options(ctx context.Context) (*Options, error) {
@@ -473,4 +475,8 @@ func escapePath(path string) (string, error) {
 		builder.WriteByte('/')
 	}
 	return builder.String(), nil
+}
+
+func (c *Client) Close() {
+	c.endpoints.Close()
 }

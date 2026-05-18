@@ -1,7 +1,11 @@
 package httpx_test
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
@@ -153,4 +157,108 @@ func TestNormalizeEndpointPolicy(t *testing.T) {
 	if _, err := httpx.NormalizeEndpointPolicy(httpx.EndpointPolicy{Mode: "random"}); err == nil {
 		t.Fatal("NormalizeEndpointPolicy() error = nil, want unsupported mode error")
 	}
+}
+
+func TestNormalizeEndpointPolicyDefaultsHealthAndCircuitBreaker(t *testing.T) {
+	t.Parallel()
+
+	policy, err := httpx.NormalizeEndpointPolicy(httpx.EndpointPolicy{
+		HealthCheck: httpx.EndpointHealthCheckPolicy{
+			Enabled: true,
+		},
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NormalizeEndpointPolicy() error = %v", err)
+	}
+	if policy.HealthCheck.Interval == 0 || policy.HealthCheck.Timeout == 0 {
+		t.Fatalf("health check defaults were not applied: %+v", policy.HealthCheck)
+	}
+	if policy.HealthCheck.FailureThreshold != 1 || policy.HealthCheck.SuccessThreshold != 1 {
+		t.Fatalf("health thresholds = %+v", policy.HealthCheck)
+	}
+	if policy.CircuitBreaker.FailureThreshold != 3 || policy.CircuitBreaker.OpenTimeout == 0 || policy.CircuitBreaker.HalfOpenMaxRequests != 1 {
+		t.Fatalf("circuit breaker defaults were not applied: %+v", policy.CircuitBreaker)
+	}
+}
+
+func TestEndpointSetHealthCheckMarksAndRestoresEndpoint(t *testing.T) {
+	t.Parallel()
+
+	var status atomic.Int32
+	status.Store(http.StatusServiceUnavailable)
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(int(status.Load()))
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{first.URL, second.URL}, httpx.EndpointPolicy{
+		HealthCheck: httpx.EndpointHealthCheckPolicy{
+			Enabled:          true,
+			Interval:         time.Millisecond,
+			Timeout:          100 * time.Millisecond,
+			FailureThreshold: 1,
+			SuccessThreshold: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	endpoints.StartHealthCheck(first.Client(), http.MethodGet, "/health")
+	defer endpoints.Close()
+
+	waitFor(t, func() bool {
+		candidates := endpoints.Candidates("/status")
+		return len(candidates) == 1 && candidates[0].URL == second.URL+"/status"
+	})
+	status.Store(http.StatusNoContent)
+	waitFor(t, func() bool {
+		candidates := endpoints.Candidates("/status")
+		if len(candidates) != 2 {
+			return false
+		}
+		for _, candidate := range candidates {
+			if candidate.URL == first.URL+"/status" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func TestEndpointSetCloseIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{"http://example.test"}, httpx.EndpointPolicy{
+		HealthCheck: httpx.EndpointHealthCheckPolicy{
+			Enabled:  true,
+			Interval: time.Hour,
+			Timeout:  time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	endpoints.StartHealthCheck(http.DefaultClient, http.MethodGet, "/")
+	endpoints.Close()
+	endpoints.Close()
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("condition was not met before deadline")
 }

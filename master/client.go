@@ -37,7 +37,7 @@ func New(config Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("master: invalid base urls: %w", err)
 	}
-	return &Client{
+	client := &Client{
 		endpoints: endpoints,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
@@ -45,7 +45,9 @@ func New(config Config) (*Client, error) {
 			BearerToken: config.BearerToken,
 			Retry:       config.Retry,
 		}),
-	}, nil
+	}
+	client.endpoints.StartHealthCheck(config.HTTPClient, http.MethodHead, "/cluster/healthz")
+	return client, nil
 }
 
 type AssignOptions struct {
@@ -218,4 +220,8 @@ func (c *Client) VolumeStatus(ctx context.Context) (map[string]any, error) {
 		Method: http.MethodGet,
 	}, &out)
 	return out, err
+}
+
+func (c *Client) Close() {
+	c.endpoints.Close()
 }

@@ -1,7 +1,9 @@
 package httpx
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -42,11 +44,22 @@ type EndpointSet struct {
 	active int
 	next   int
 	policy EndpointPolicy
+	states []endpointState
+
+	closeOnce sync.Once
+	closeCh   chan struct{}
 }
 
 type EndpointCandidate struct {
 	Index int
 	URL   string
+}
+
+type endpointState struct {
+	failures  int
+	successes int
+	unhealthy bool
+	openUntil time.Time
 }
 
 func NewEndpointSet(rawURLs []string) (*EndpointSet, error) {
@@ -62,7 +75,12 @@ func NewEndpointSetWithPolicy(rawURLs []string, policy EndpointPolicy) (*Endpoin
 	if err != nil {
 		return nil, err
 	}
-	return &EndpointSet{urls: urls, policy: policy}, nil
+	return &EndpointSet{
+		urls:    urls,
+		policy:  policy,
+		states:  make([]endpointState, len(urls)),
+		closeCh: make(chan struct{}),
+	}, nil
 }
 
 func NormalizeEndpointPolicy(policy EndpointPolicy) (EndpointPolicy, error) {
@@ -73,6 +91,31 @@ func NormalizeEndpointPolicy(policy EndpointPolicy) (EndpointPolicy, error) {
 	case EndpointPolicyFailover, EndpointPolicyRoundRobin:
 	default:
 		return EndpointPolicy{}, fmt.Errorf("httpx: unsupported endpoint policy mode %q", policy.Mode)
+	}
+	if policy.HealthCheck.Enabled {
+		if policy.HealthCheck.Interval == 0 {
+			policy.HealthCheck.Interval = 30 * time.Second
+		}
+		if policy.HealthCheck.Timeout == 0 {
+			policy.HealthCheck.Timeout = 2 * time.Second
+		}
+		if policy.HealthCheck.FailureThreshold == 0 {
+			policy.HealthCheck.FailureThreshold = 1
+		}
+		if policy.HealthCheck.SuccessThreshold == 0 {
+			policy.HealthCheck.SuccessThreshold = 1
+		}
+	}
+	if policy.CircuitBreaker.Enabled {
+		if policy.CircuitBreaker.FailureThreshold == 0 {
+			policy.CircuitBreaker.FailureThreshold = 3
+		}
+		if policy.CircuitBreaker.OpenTimeout == 0 {
+			policy.CircuitBreaker.OpenTimeout = 30 * time.Second
+		}
+		if policy.CircuitBreaker.HalfOpenMaxRequests == 0 {
+			policy.CircuitBreaker.HalfOpenMaxRequests = 1
+		}
 	}
 	return policy, nil
 }
@@ -135,6 +178,8 @@ func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
 	defer s.mu.Unlock()
 
 	candidates := make([]EndpointCandidate, 0, len(s.urls))
+	halfOpen := make([]EndpointCandidate, 0, len(s.urls))
+	now := time.Now()
 	start := s.active
 	if s.policy.Mode == EndpointPolicyRoundRobin {
 		start = s.next
@@ -142,19 +187,128 @@ func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
 	}
 	for offset := range s.urls {
 		index := (start + offset) % len(s.urls)
-		candidates = append(candidates, EndpointCandidate{
+		if s.skipLocked(index, now) {
+			continue
+		}
+		candidate := EndpointCandidate{
 			Index: index,
 			URL:   s.urls[index] + path,
-		})
+		}
+		if s.halfOpenLocked(index, now) {
+			halfOpen = append(halfOpen, candidate)
+			continue
+		}
+		candidates = append(candidates, candidate)
 	}
-	return candidates
+	return append(halfOpen, candidates...)
 }
 
 func (s *EndpointSet) MarkSuccess(index int) {
+	s.RecordSuccess(index)
+}
+
+func (s *EndpointSet) RecordSuccess(index int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if index < 0 || index >= len(s.urls) {
+		return
+	}
+	state := &s.states[index]
+	state.failures = 0
+	state.successes++
+	if !s.policy.HealthCheck.Enabled || state.successes >= s.policy.HealthCheck.SuccessThreshold {
+		state.unhealthy = false
+	}
+	state.openUntil = time.Time{}
 	if s.policy.Mode == EndpointPolicyFailover && index >= 0 && index < len(s.urls) {
 		s.active = index
+	}
+}
+
+func (s *EndpointSet) RecordFailure(index int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if index < 0 || index >= len(s.urls) {
+		return
+	}
+	state := &s.states[index]
+	state.failures++
+	state.successes = 0
+	if s.policy.HealthCheck.Enabled && state.failures >= s.policy.HealthCheck.FailureThreshold {
+		state.unhealthy = true
+	}
+	if s.policy.CircuitBreaker.Enabled && state.failures >= s.policy.CircuitBreaker.FailureThreshold {
+		state.openUntil = time.Now().Add(s.policy.CircuitBreaker.OpenTimeout)
+	}
+}
+
+func (s *EndpointSet) StartHealthCheck(client *http.Client, method string, path string) {
+	if !s.policy.HealthCheck.Enabled {
+		return
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	probeClient := *client
+	probeClient.Timeout = s.policy.HealthCheck.Timeout
+	ticker := time.NewTicker(s.policy.HealthCheck.Interval)
+	go func() {
+		defer ticker.Stop()
+		s.probeAll(&probeClient, method, path)
+		for {
+			select {
+			case <-ticker.C:
+				s.probeAll(&probeClient, method, path)
+			case <-s.closeCh:
+				return
+			}
+		}
+	}()
+}
+
+func (s *EndpointSet) Close() {
+	s.closeOnce.Do(func() {
+		close(s.closeCh)
+	})
+}
+
+func (s *EndpointSet) skipLocked(index int, now time.Time) bool {
+	state := s.states[index]
+	if s.policy.HealthCheck.Enabled && state.unhealthy {
+		return true
+	}
+	return s.policy.CircuitBreaker.Enabled && state.openUntil.After(now)
+}
+
+func (s *EndpointSet) halfOpenLocked(index int, now time.Time) bool {
+	state := s.states[index]
+	return s.policy.CircuitBreaker.Enabled && !state.openUntil.IsZero() && !state.openUntil.After(now)
+}
+
+func (s *EndpointSet) probeAll(client *http.Client, method string, path string) {
+	urls := s.URLs()
+	for index, baseURL := range urls {
+		ctx, cancel := context.WithTimeout(context.Background(), s.policy.HealthCheck.Timeout)
+		req, err := http.NewRequestWithContext(ctx, method, baseURL+path, nil)
+		if err != nil {
+			cancel()
+			s.RecordFailure(index)
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			s.RecordFailure(index)
+			continue
+		}
+		resp.Body.Close()
+		cancel()
+		if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusInternalServerError {
+			s.RecordSuccess(index)
+			continue
+		}
+		s.RecordFailure(index)
 	}
 }

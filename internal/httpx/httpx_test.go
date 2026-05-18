@@ -470,6 +470,151 @@ func TestDoEndpointReturnsLastRetryableResponse(t *testing.T) {
 	}
 }
 
+func TestDoEndpointCircuitBreakerSkipsOpenEndpoint(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+	var secondCalls int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{first.URL, second.URL}, httpx.EndpointPolicy{
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled:          true,
+			FailureThreshold: 1,
+			OpenTimeout:      time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: first.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	for range 2 {
+		resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+			Method:        http.MethodGet,
+			ContentLength: -1,
+		})
+		if err != nil {
+			t.Fatalf("DoEndpoint() error = %v", err)
+		}
+		resp.Body.Close()
+	}
+	if firstCalls != 1 || secondCalls != 2 {
+		t.Fatalf("calls = %d/%d, want first skipped after opening breaker", firstCalls, secondCalls)
+	}
+}
+
+func TestDoEndpointCircuitBreakerHalfOpenAfterTimeout(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := atomic.AddInt32(&firstCalls, 1)
+		if call == 1 {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{first.URL, second.URL}, httpx.EndpointPolicy{
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled:          true,
+			FailureThreshold: 1,
+			OpenTimeout:      10 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: first.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() error = %v", err)
+	}
+	resp.Body.Close()
+	time.Sleep(20 * time.Millisecond)
+	resp, err = client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() after timeout error = %v", err)
+	}
+	resp.Body.Close()
+	if firstCalls != 2 {
+		t.Fatalf("first calls = %d, want half-open retry after timeout", firstCalls)
+	}
+}
+
+func TestDoEndpointReturnsNoAvailableEndpoints(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{server.URL}, httpx.EndpointPolicy{
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled:          true,
+			FailureThreshold: 1,
+			OpenTimeout:      time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: server.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	})
+	if err != nil {
+		t.Fatalf("DoEndpoint() error = %v", err)
+	}
+	resp.Body.Close()
+	if _, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}); err == nil || !strings.Contains(err.Error(), "no available endpoints") {
+		t.Fatalf("DoEndpoint() after open breaker error = %v, want no available endpoints", err)
+	}
+}
+
 func TestDoEndpointRequiresEndpoints(t *testing.T) {
 	t.Parallel()
 

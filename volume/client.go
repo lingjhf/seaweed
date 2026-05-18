@@ -57,7 +57,7 @@ func New(config Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("volume: invalid base urls: %w", err)
 	}
-	return &Client{
+	client := &Client{
 		endpoints: endpoints,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
@@ -65,7 +65,9 @@ func New(config Config) (*Client, error) {
 			BearerToken: config.BearerToken,
 			Retry:       config.Retry,
 		}),
-	}, nil
+	}
+	client.endpoints.StartHealthCheck(config.HTTPClient, http.MethodGet, "/status")
+	return client, nil
 }
 
 func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts PutOptions) (*PutResponse, error) {
@@ -177,4 +179,8 @@ func contentDisposition(filename string) string {
 		return ""
 	}
 	return `inline; filename="` + strings.ReplaceAll(filename, `"`, `\"`) + `"`
+}
+
+func (c *Client) Close() {
+	c.endpoints.Close()
 }

@@ -198,6 +198,21 @@ func (c *Client) TUS() *tus.Client {
 	return c.tus
 }
 
+func (c *Client) Close() {
+	if c.master != nil {
+		c.master.Close()
+	}
+	if c.volume != nil {
+		c.volume.Close()
+	}
+	if c.filer != nil {
+		c.filer.Close()
+	}
+	if c.tus != nil {
+		c.tus.Close()
+	}
+}
+
 func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
 	if c.config.S3URL == "" {
 		return nil, fmt.Errorf("seaweed: s3 url is required")

@@ -117,7 +117,7 @@ func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path st
 	}
 	candidates := endpoints.Candidates(path)
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("httpx: endpoints are required")
+		return nil, fmt.Errorf("httpx: no available endpoints")
 	}
 	if !isRetryableMethod(request.Method) {
 		candidates = candidates[:1]
@@ -127,8 +127,12 @@ func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path st
 	for i, candidate := range candidates {
 		request.URL = candidate.URL
 		resp, err := c.Do(ctx, request)
+		if err == nil && !isEndpointFailureResponse(resp.StatusCode) {
+			endpoints.RecordSuccess(candidate.Index)
+			return resp, nil
+		}
+		endpoints.RecordFailure(candidate.Index)
 		if err == nil && !shouldRetryResponse(request.Method, resp.StatusCode) {
-			endpoints.MarkSuccess(candidate.Index)
 			return resp, nil
 		}
 		if i == len(candidates)-1 {
@@ -289,6 +293,10 @@ func shouldRetryResponse(method string, status int) bool {
 	if !isRetryableMethod(method) {
 		return false
 	}
+	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func isEndpointFailureResponse(status int) bool {
 	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
 }
 
