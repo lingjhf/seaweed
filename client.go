@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lingjhf/seaweed/blob"
+	"github.com/lingjhf/seaweed/filer"
 	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 	"github.com/lingjhf/seaweed/volume"
@@ -20,6 +21,7 @@ type Client struct {
 	master *master.Client
 	volume *volume.Client
 	blob   *blob.Client
+	filer  *filer.Client
 }
 
 func New(config Config, opts ...Option) (*Client, error) {
@@ -54,6 +56,13 @@ func New(config Config, opts ...Option) (*Client, error) {
 		}
 		config.VolumeURL = volumeURL
 	}
+	if config.FilerURL != "" {
+		filerURL, err := normalizeBaseURL(config.FilerURL)
+		if err != nil {
+			return nil, fmt.Errorf("seaweed: invalid filer url: %w", err)
+		}
+		config.FilerURL = filerURL
+	}
 
 	transport := httpx.NewClient(httpx.Config{
 		HTTPClient:  applied.httpClient,
@@ -78,6 +87,10 @@ func New(config Config, opts ...Option) (*Client, error) {
 		HTTP:          transport,
 		UsePublicURLs: config.UsePublicURLs,
 	})
+	client.filer = filer.New(filer.Config{
+		BaseURL: config.FilerURL,
+		HTTP:    transport,
+	})
 	return client, nil
 }
 
@@ -95,6 +108,10 @@ func (c *Client) Volume() *volume.Client {
 
 func (c *Client) Blob() *blob.Client {
 	return c.blob
+}
+
+func (c *Client) Filer() *filer.Client {
+	return c.filer
 }
 
 func normalizeBaseURL(raw string) (string, error) {

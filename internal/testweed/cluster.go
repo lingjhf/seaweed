@@ -6,10 +6,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,10 +20,12 @@ import (
 type Cluster struct {
 	MasterURL string
 	VolumeURL string
+	FilerURL  string
 
-	dataDir string
-	cmds    []*exec.Cmd
-	logs    []string
+	masterAddress string
+	dataDir       string
+	cmds          []*exec.Cmd
+	logs          []string
 }
 
 func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
@@ -33,9 +37,10 @@ func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
 	volumePort, volumeGRPCPort := freeDistinctPortPair(t, masterPort, masterGRPCPort)
 
 	cluster := &Cluster{
-		MasterURL: fmt.Sprintf("http://127.0.0.1:%d", masterPort),
-		VolumeURL: fmt.Sprintf("http://127.0.0.1:%d", volumePort),
-		dataDir:   dataDir,
+		MasterURL:     fmt.Sprintf("http://127.0.0.1:%d", masterPort),
+		VolumeURL:     fmt.Sprintf("http://127.0.0.1:%d", volumePort),
+		masterAddress: fmt.Sprintf("127.0.0.1:%d", masterPort),
+		dataDir:       dataDir,
 	}
 
 	masterDir := filepath.Join(dataDir, "master")
@@ -64,6 +69,27 @@ func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
 	cluster.waitForAssignableVolume(t, ctx)
 
 	t.Cleanup(cluster.Stop)
+	return cluster
+}
+
+func StartMasterVolumeFiler(t *testing.T, ctx context.Context) *Cluster {
+	t.Helper()
+
+	cluster := StartMasterVolume(t, ctx)
+	filerPort, filerGRPCPort := freeDistinctPortPair(t, cluster.usedPorts()...)
+	filerDir := filepath.Join(cluster.dataDir, "filer")
+	mkdir(t, filerDir)
+
+	cluster.FilerURL = fmt.Sprintf("http://127.0.0.1:%d", filerPort)
+	cluster.start(t, ctx, findWeedBinary(t), "filer",
+		"-port", fmt.Sprint(filerPort),
+		"-port.grpc", fmt.Sprint(filerGRPCPort),
+		"-master", cluster.masterAddress,
+		"-ip", "127.0.0.1",
+		"-defaultStoreDir", filerDir,
+		"-tusBasePath", "/.tus",
+	)
+	cluster.waitForHTTP(t, ctx, cluster.FilerURL+"/")
 	return cluster
 }
 
@@ -315,4 +341,23 @@ func (c *Cluster) dumpLogs(t *testing.T) {
 		}
 		t.Logf("%s:\n%s", filepath.Base(logPath), content)
 	}
+}
+
+func (c *Cluster) usedPorts() []int {
+	ports := []int{}
+	for _, rawURL := range []string{c.MasterURL, c.VolumeURL, c.FilerURL} {
+		if rawURL == "" {
+			continue
+		}
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			continue
+		}
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil {
+			continue
+		}
+		ports = append(ports, port, port+10000)
+	}
+	return ports
 }
