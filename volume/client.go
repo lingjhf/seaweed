@@ -10,6 +10,7 @@ import (
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
 
+// Config configures a volume client.
 type Config struct {
 	BaseURLs       []string
 	HTTPClient     *http.Client
@@ -19,14 +20,19 @@ type Config struct {
 	EndpointPolicy EndpointPolicy
 }
 
+// RetryPolicy controls retry attempts for retryable volume requests.
 type RetryPolicy = httpx.RetryPolicy
+
+// EndpointPolicy controls how the client chooses among volume endpoints.
 type EndpointPolicy = httpx.EndpointPolicy
 
+// Client calls SeaweedFS volume server HTTP APIs.
 type Client struct {
 	endpoints *httpx.EndpointSet
 	http      *httpx.Client
 }
 
+// PutOptions configures a file upload to a volume server.
 type PutOptions struct {
 	ContentType     string
 	ContentEncoding string
@@ -35,6 +41,7 @@ type PutOptions struct {
 	ContentLength   int64
 }
 
+// PutResponse is returned by a successful volume upload.
 type PutResponse struct {
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
@@ -42,10 +49,12 @@ type PutResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+// GetOptions configures a file download from a volume server.
 type GetOptions struct {
 	Range string
 }
 
+// New creates a volume client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
 		return nil, fmt.Errorf("volume: base urls are required")
@@ -70,6 +79,7 @@ func New(config Config) (*Client, error) {
 	return client, nil
 }
 
+// Put writes body to fileID on a volume server.
 func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts PutOptions) (*PutResponse, error) {
 	path, err := c.filePath(fileID)
 	if err != nil {
@@ -91,6 +101,7 @@ func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts Pu
 	return &out, err
 }
 
+// Get returns the file content response for fileID.
 func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http.Response, error) {
 	path, err := c.filePath(fileID)
 	if err != nil {
@@ -114,6 +125,7 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 	return resp, nil
 }
 
+// Head returns response headers for fileID.
 func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	path, err := c.filePath(fileID)
 	if err != nil {
@@ -133,6 +145,7 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	return resp.Header.Clone(), nil
 }
 
+// Delete removes fileID from a volume server.
 func (c *Client) Delete(ctx context.Context, fileID string) error {
 	path, err := c.filePath(fileID)
 	if err != nil {
@@ -144,6 +157,7 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
+// Status returns raw volume server status data.
 func (c *Client) Status(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/status", httpx.Request{
@@ -153,6 +167,7 @@ func (c *Client) Status(ctx context.Context) (map[string]any, error) {
 	return out, err
 }
 
+// Health checks the volume server status endpoint.
 func (c *Client) Health(ctx context.Context) error {
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
@@ -181,6 +196,7 @@ func contentDisposition(filename string) string {
 	return `inline; filename="` + strings.ReplaceAll(filename, `"`, `\"`) + `"`
 }
 
+// Close stops background endpoint health checks.
 func (c *Client) Close() {
 	c.endpoints.Close()
 }

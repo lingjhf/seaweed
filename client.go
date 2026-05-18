@@ -20,6 +20,7 @@ import (
 
 const defaultTUSBasePath = "/.tus"
 
+// Client is a root SeaweedFS client that owns shared transport and service clients.
 type Client struct {
 	config Config
 	http   *http.Client
@@ -34,6 +35,7 @@ type Client struct {
 	iamEndpoints *httpx.EndpointSet
 }
 
+// New creates a root SeaweedFS client from config.
 func New(config Config, opts ...Option) (*Client, error) {
 	applied := options{
 		httpClient: NewHTTPClient(DefaultHTTPClientConfig()),
@@ -211,30 +213,37 @@ func New(config Config, opts ...Option) (*Client, error) {
 	return client, nil
 }
 
+// Config returns the normalized configuration used by the client.
 func (c *Client) Config() Config {
 	return c.config
 }
 
+// Master returns the master client.
 func (c *Client) Master() *master.Client {
 	return c.master
 }
 
+// Volume returns the direct volume client, or nil when VolumeURLs were not configured.
 func (c *Client) Volume() *volume.Client {
 	return c.volume
 }
 
+// Blob returns the blob client.
 func (c *Client) Blob() *blob.Client {
 	return c.blob
 }
 
+// Filer returns the filer client, or nil when FilerURLs were not configured.
 func (c *Client) Filer() *filer.Client {
 	return c.filer
 }
 
+// TUS returns the TUS client, or nil when FilerURLs were not configured.
 func (c *Client) TUS() *tus.Client {
 	return c.tus
 }
 
+// Close stops background endpoint health checks and releases cached clients.
 func (c *Client) Close() {
 	if c.master != nil {
 		c.master.Close()
@@ -259,6 +268,7 @@ func (c *Client) Close() {
 	}
 }
 
+// S3 returns an AWS SDK S3 client configured for SeaweedFS path-style requests.
 func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
 	if c.s3Endpoints == nil {
 		return nil, fmt.Errorf("seaweed: s3 urls are required")
@@ -275,6 +285,7 @@ func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
 	}), nil
 }
 
+// IAM returns an AWS SDK IAM client configured for SeaweedFS.
 func (c *Client) IAM(ctx context.Context) (*iam.Client, error) {
 	if c.iamEndpoints == nil {
 		return nil, fmt.Errorf("seaweed: iam urls or s3 urls are required")

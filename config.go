@@ -8,49 +8,85 @@ import (
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
 
+// RetryPolicy controls retry attempts for retryable HTTP methods.
 type RetryPolicy = httpx.RetryPolicy
+
+// EndpointPolicy controls how clients choose among multiple service endpoints.
 type EndpointPolicy = httpx.EndpointPolicy
+
+// EndpointPolicyMode selects the endpoint selection strategy.
 type EndpointPolicyMode = httpx.EndpointPolicyMode
+
+// EndpointHealthCheckPolicy configures background endpoint health probes.
 type EndpointHealthCheckPolicy = httpx.EndpointHealthCheckPolicy
+
+// EndpointCircuitBreakerPolicy configures endpoint failure isolation.
 type EndpointCircuitBreakerPolicy = httpx.EndpointCircuitBreakerPolicy
 
 const (
-	EndpointPolicyFailover   = httpx.EndpointPolicyFailover
+	// EndpointPolicyFailover keeps using the active endpoint until it fails.
+	EndpointPolicyFailover = httpx.EndpointPolicyFailover
+	// EndpointPolicyRoundRobin rotates the starting endpoint for retryable requests.
 	EndpointPolicyRoundRobin = httpx.EndpointPolicyRoundRobin
 )
 
+// Config configures a root SeaweedFS client.
 type Config struct {
-	MasterURLs           []string
-	VolumeURLs           []string
-	FilerURLs            []string
-	TUSBasePath          string
-	S3URLs               []string
-	IAMURLs              []string
-	Region               string
-	AccessKeyID          string
-	SecretAccessKey      string
-	BearerToken          string
-	UserAgent            string
-	UsePublicURLs        bool
-	Retry                RetryPolicy
+	// MasterURLs are the SeaweedFS master HTTP endpoints. At least one is required.
+	MasterURLs []string
+	// VolumeURLs are optional direct volume server HTTP endpoints.
+	VolumeURLs []string
+	// FilerURLs are optional filer HTTP endpoints used by the filer and TUS clients.
+	FilerURLs []string
+	// TUSBasePath is the filer TUS base path. The default is "/.tus".
+	TUSBasePath string
+	// S3URLs are optional SeaweedFS S3 gateway endpoints.
+	S3URLs []string
+	// IAMURLs are optional SeaweedFS IAM endpoints. When empty, IAM uses S3URLs.
+	IAMURLs []string
+	// Region is the AWS signing region for S3 and IAM clients. The default is "us-east-1".
+	Region string
+	// AccessKeyID is the S3/IAM access key.
+	AccessKeyID string
+	// SecretAccessKey is the S3/IAM secret key.
+	SecretAccessKey string
+	// BearerToken is sent as an Authorization bearer token on native HTTP APIs.
+	BearerToken string
+	// UserAgent overrides the User-Agent sent by native HTTP API clients.
+	UserAgent string
+	// UsePublicURLs makes the blob client prefer public volume URLs returned by master.
+	UsePublicURLs bool
+	// Retry controls retries for retryable native HTTP API methods.
+	Retry RetryPolicy
+	// BlobLocationCacheTTL limits how long blob volume lookups are cached.
 	BlobLocationCacheTTL time.Duration
 
-	EndpointPolicy       EndpointPolicy
+	// EndpointPolicy is the default policy for all endpoint lists.
+	EndpointPolicy EndpointPolicy
+	// MasterEndpointPolicy overrides EndpointPolicy for the master client.
 	MasterEndpointPolicy EndpointPolicy
+	// VolumeEndpointPolicy overrides EndpointPolicy for the direct volume client.
 	VolumeEndpointPolicy EndpointPolicy
-	BlobEndpointPolicy   EndpointPolicy
-	FilerEndpointPolicy  EndpointPolicy
-	TUSEndpointPolicy    EndpointPolicy
-	S3EndpointPolicy     EndpointPolicy
-	IAMEndpointPolicy    EndpointPolicy
+	// BlobEndpointPolicy overrides EndpointPolicy for blob volume reads.
+	BlobEndpointPolicy EndpointPolicy
+	// FilerEndpointPolicy overrides EndpointPolicy for the filer client.
+	FilerEndpointPolicy EndpointPolicy
+	// TUSEndpointPolicy overrides EndpointPolicy for the TUS client.
+	TUSEndpointPolicy EndpointPolicy
+	// S3EndpointPolicy overrides EndpointPolicy for the S3 client.
+	S3EndpointPolicy EndpointPolicy
+	// IAMEndpointPolicy overrides EndpointPolicy for the IAM client.
+	IAMEndpointPolicy EndpointPolicy
 }
 
+// Option customizes root client construction.
 type Option func(*options)
 
 type options struct {
 	httpClient *http.Client
 }
 
+// HTTPClientConfig configures the HTTP client created by NewHTTPClient.
 type HTTPClientConfig struct {
 	MaxIdleConns          int
 	MaxIdleConnsPerHost   int
@@ -63,12 +99,14 @@ type HTTPClientConfig struct {
 	Timeout               time.Duration
 }
 
+// WithHTTPClient makes New use client for all native and AWS SDK requests.
 func WithHTTPClient(client *http.Client) Option {
 	return func(o *options) {
 		o.httpClient = client
 	}
 }
 
+// DefaultRetryPolicy returns the default retry policy used by New.
 func DefaultRetryPolicy() RetryPolicy {
 	return RetryPolicy{
 		MaxAttempts: 3,
@@ -76,12 +114,14 @@ func DefaultRetryPolicy() RetryPolicy {
 	}
 }
 
+// DefaultEndpointPolicy returns the default failover endpoint policy.
 func DefaultEndpointPolicy() EndpointPolicy {
 	return EndpointPolicy{
 		Mode: EndpointPolicyFailover,
 	}
 }
 
+// DefaultHTTPClientConfig returns the default transport settings for NewHTTPClient.
 func DefaultHTTPClientConfig() HTTPClientConfig {
 	return HTTPClientConfig{
 		MaxIdleConns:          256,
@@ -94,6 +134,7 @@ func DefaultHTTPClientConfig() HTTPClientConfig {
 	}
 }
 
+// NewHTTPClient builds an HTTP client tuned for SeaweedFS SDK workloads.
 func NewHTTPClient(config HTTPClientConfig) *http.Client {
 	if config.MaxIdleConns == 0 {
 		config.MaxIdleConns = 256

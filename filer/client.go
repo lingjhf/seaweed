@@ -13,6 +13,7 @@ import (
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
 
+// Config configures a filer client.
 type Config struct {
 	BaseURLs       []string
 	HTTPClient     *http.Client
@@ -22,14 +23,19 @@ type Config struct {
 	EndpointPolicy EndpointPolicy
 }
 
+// RetryPolicy controls retry attempts for retryable filer requests.
 type RetryPolicy = httpx.RetryPolicy
+
+// EndpointPolicy controls how the client chooses among filer endpoints.
 type EndpointPolicy = httpx.EndpointPolicy
 
+// Client calls SeaweedFS filer HTTP APIs.
 type Client struct {
 	endpoints *httpx.EndpointSet
 	http      *httpx.Client
 }
 
+// WriteOptions configures Put requests to the filer.
 type WriteOptions struct {
 	DataCenter         string
 	Rack               string
@@ -49,6 +55,7 @@ type WriteOptions struct {
 	ContentLength      int64
 }
 
+// AppendOptions configures Append requests to the filer.
 type AppendOptions struct {
 	DataCenter         string
 	Rack               string
@@ -67,6 +74,7 @@ type AppendOptions struct {
 	ContentLength      int64
 }
 
+// WriteResult is returned by successful Put and Append requests.
 type WriteResult struct {
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
@@ -74,20 +82,24 @@ type WriteResult struct {
 	Error string `json:"error,omitempty"`
 }
 
+// HeadResult contains filer response headers and parsed SeaweedFS tags.
 type HeadResult struct {
 	Header http.Header
 	Tags   map[string]string
 }
 
+// GetOptions configures a filer Get request.
 type GetOptions struct {
 	ResponseContentDisposition string
 	ResolveManifest            bool
 }
 
+// StatOptions configures a filer metadata request.
 type StatOptions struct {
 	ResolveManifest bool
 }
 
+// ListOptions configures one filer listing page.
 type ListOptions struct {
 	Limit              int
 	LastFileName       string
@@ -95,6 +107,7 @@ type ListOptions struct {
 	NamePatternExclude string
 }
 
+// WalkOptions configures paginated directory walking.
 type WalkOptions struct {
 	Limit              int
 	LastFileName       string
@@ -102,12 +115,14 @@ type WalkOptions struct {
 	NamePatternExclude string
 }
 
+// DeleteOptions configures a filer Delete request.
 type DeleteOptions struct {
 	Recursive            bool
 	IgnoreRecursiveError bool
 	SkipChunkDeletion    bool
 }
 
+// ListPage is one page returned by a filer directory listing.
 type ListPage struct {
 	Path                  string  `json:"Path"`
 	Entries               []Entry `json:"Entries"`
@@ -116,6 +131,7 @@ type ListPage struct {
 	ShouldDisplayLoadMore bool    `json:"ShouldDisplayLoadMore"`
 }
 
+// Entry describes a filer file or directory.
 type Entry struct {
 	FullPath        string            `json:"FullPath"`
 	Mtime           time.Time         `json:"Mtime"`
@@ -142,6 +158,7 @@ type Entry struct {
 	Quota           int64             `json:"Quota"`
 }
 
+// Chunk describes one chunk in a filer entry.
 type Chunk struct {
 	FileID       string `json:"file_id"`
 	Size         int64  `json:"size"`
@@ -152,12 +169,14 @@ type Chunk struct {
 	IsGzipped    bool   `json:"is_gzipped"`
 }
 
+// FID describes the structured file ID attached to a filer chunk.
 type FID struct {
 	VolumeID int64  `json:"volume_id"`
 	FileKey  uint64 `json:"file_key"`
 	Cookie   uint32 `json:"cookie"`
 }
 
+// New creates a filer client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
 		return nil, fmt.Errorf("filer: base urls are required")
@@ -182,10 +201,12 @@ func New(config Config) (*Client, error) {
 	return client, nil
 }
 
+// Put writes body to path through the filer.
 func (c *Client) Put(ctx context.Context, path string, body io.Reader, opts WriteOptions) (*WriteResult, error) {
 	return c.write(ctx, path, body, opts, "")
 }
 
+// Append appends body to path through the filer.
 func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts AppendOptions) (*WriteResult, error) {
 	return c.write(ctx, path, body, writeOptionsFromAppend(opts), "append")
 }
@@ -209,6 +230,7 @@ func (c *Client) write(ctx context.Context, path string, body io.Reader, opts Wr
 	return &out, err
 }
 
+// Copy copies srcPath to dstPath through the filer.
 func (c *Client) Copy(ctx context.Context, srcPath string, dstPath string) error {
 	resourcePath, err := c.resourcePath(dstPath)
 	if err != nil {
@@ -223,6 +245,7 @@ func (c *Client) Copy(ctx context.Context, srcPath string, dstPath string) error
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
+// Move moves srcPath to dstPath through the filer.
 func (c *Client) Move(ctx context.Context, srcPath string, dstPath string) error {
 	resourcePath, err := c.resourcePath(dstPath)
 	if err != nil {
@@ -237,6 +260,7 @@ func (c *Client) Move(ctx context.Context, srcPath string, dstPath string) error
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
+// SetTags writes SeaweedFS filer tags for path.
 func (c *Client) SetTags(ctx context.Context, path string, tags map[string]string) error {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -256,6 +280,7 @@ func (c *Client) SetTags(ctx context.Context, path string, tags map[string]strin
 	}, http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent)
 }
 
+// DeleteTags deletes SeaweedFS filer tag keys from path.
 func (c *Client) DeleteTags(ctx context.Context, path string, keys ...string) error {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -270,6 +295,7 @@ func (c *Client) DeleteTags(ctx context.Context, path string, keys ...string) er
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
+// Mkdir creates a directory path through the filer.
 func (c *Client) Mkdir(ctx context.Context, path string) error {
 	resourcePath, err := c.resourcePath(ensureTrailingSlash(path))
 	if err != nil {
@@ -281,6 +307,7 @@ func (c *Client) Mkdir(ctx context.Context, path string) error {
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
+// Get returns the file content response for path.
 func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.Response, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -305,6 +332,7 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 	return resp, nil
 }
 
+// Head returns headers and parsed SeaweedFS tags for path.
 func (c *Client) Head(ctx context.Context, path string) (*HeadResult, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -328,6 +356,7 @@ func (c *Client) Head(ctx context.Context, path string) (*HeadResult, error) {
 	}, nil
 }
 
+// Tags returns parsed SeaweedFS tags for path.
 func (c *Client) Tags(ctx context.Context, path string) (map[string]string, error) {
 	head, err := c.Head(ctx, path)
 	if err != nil {
@@ -336,6 +365,7 @@ func (c *Client) Tags(ctx context.Context, path string) (map[string]string, erro
 	return head.Tags, nil
 }
 
+// Stat returns filer metadata for path.
 func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entry, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -354,6 +384,7 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 	return &out, err
 }
 
+// Walk calls fn for entries under path, following filer pagination until done.
 func (c *Client) Walk(ctx context.Context, path string, opts WalkOptions, fn func(Entry) error) error {
 	if fn == nil {
 		return fmt.Errorf("filer: walk callback is required")
@@ -387,6 +418,7 @@ func (c *Client) Walk(ctx context.Context, path string, opts WalkOptions, fn fun
 	}
 }
 
+// ListPage returns one filer listing page for path.
 func (c *Client) ListPage(ctx context.Context, path string, opts ListOptions) (*ListPage, error) {
 	resourcePath, err := c.resourcePath(ensureTrailingSlash(path))
 	if err != nil {
@@ -410,6 +442,7 @@ func (c *Client) ListPage(ctx context.Context, path string, opts ListOptions) (*
 	return &out, err
 }
 
+// Delete removes path from the filer.
 func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) error {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
@@ -549,6 +582,7 @@ func ensureTrailingSlash(path string) string {
 	return path + "/"
 }
 
+// Close stops background endpoint health checks.
 func (c *Client) Close() {
 	c.endpoints.Close()
 }

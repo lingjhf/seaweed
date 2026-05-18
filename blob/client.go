@@ -15,6 +15,7 @@ import (
 	"github.com/lingjhf/seaweed/volume"
 )
 
+// Config configures a blob client.
 type Config struct {
 	Master           *master.Client
 	HTTPClient       *http.Client
@@ -26,9 +27,13 @@ type Config struct {
 	LocationCacheTTL time.Duration
 }
 
+// RetryPolicy controls retry attempts for retryable blob volume requests.
 type RetryPolicy = httpx.RetryPolicy
+
+// EndpointPolicy controls how blob reads choose among volume locations.
 type EndpointPolicy = httpx.EndpointPolicy
 
+// Client uploads and reads SeaweedFS blobs by file ID.
 type Client struct {
 	master           *master.Client
 	httpClient       *http.Client
@@ -56,6 +61,7 @@ type lookupFlight struct {
 	err    error
 }
 
+// PutOptions configures a blob upload.
 type PutOptions struct {
 	Collection    string
 	DataCenter    string
@@ -67,16 +73,19 @@ type PutOptions struct {
 	Filename      string
 }
 
+// PutResponse is returned by a successful blob upload.
 type PutResponse struct {
 	FileID string
 	Size   int64
 	ETag   string
 }
 
+// GetOptions configures a blob read.
 type GetOptions struct {
 	Range string
 }
 
+// New creates a blob client.
 func New(config Config) (*Client, error) {
 	if config.Master == nil {
 		return nil, fmt.Errorf("blob: master client is required")
@@ -102,6 +111,7 @@ func New(config Config) (*Client, error) {
 	}, nil
 }
 
+// Put assigns a file ID through master and writes body to the assigned volume.
 func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*PutResponse, error) {
 	assigned, err := c.master.Assign(ctx, master.AssignOptions{
 		Collection:  opts.Collection,
@@ -144,6 +154,7 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 	}, nil
 }
 
+// Get reads fileID from its volume server.
 func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http.Response, error) {
 	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
@@ -159,6 +170,7 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 	return resp, nil
 }
 
+// Head returns headers for fileID from its volume server.
 func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
@@ -174,6 +186,7 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	return header, nil
 }
 
+// Delete removes fileID from its volume server.
 func (c *Client) Delete(ctx context.Context, fileID string) error {
 	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
@@ -389,6 +402,7 @@ func (c *Client) locationExpiresAt() time.Time {
 	return time.Now().Add(c.locationCacheTTL)
 }
 
+// Close releases cached volume clients.
 func (c *Client) Close() {
 	c.mu.Lock()
 	locations := c.locations

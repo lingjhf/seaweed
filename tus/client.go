@@ -13,8 +13,10 @@ import (
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
 
+// Version is the TUS protocol version sent by this client.
 const Version = "1.0.0"
 
+// Config configures a TUS client.
 type Config struct {
 	FilerURLs      []string
 	BasePath       string
@@ -26,9 +28,13 @@ type Config struct {
 	EndpointPolicy EndpointPolicy
 }
 
+// RetryPolicy controls retry attempts for retryable TUS requests.
 type RetryPolicy = httpx.RetryPolicy
+
+// EndpointPolicy controls how the client chooses among filer endpoints.
 type EndpointPolicy = httpx.EndpointPolicy
 
+// Client calls SeaweedFS TUS endpoints.
 type Client struct {
 	endpoints   *httpx.EndpointSet
 	basePath    string
@@ -36,6 +42,7 @@ type Client struct {
 	contentType string
 }
 
+// Options describes TUS server capabilities.
 type Options struct {
 	Version    string
 	Versions   string
@@ -43,32 +50,38 @@ type Options struct {
 	MaxSize    int64
 }
 
+// CreateOptions configures upload creation.
 type CreateOptions struct {
 	Size     int64
 	Metadata map[string]string
 }
 
+// Upload describes a TUS upload resource.
 type Upload struct {
 	Location string
 	Offset   int64
 	Size     int64
 }
 
+// Status describes the current upload offset and total size.
 type Status struct {
 	Offset int64
 	Size   int64
 }
 
+// UploadOptions configures Upload.
 type UploadOptions struct {
 	Size      int64
 	ChunkSize int64
 	Metadata  map[string]string
 }
 
+// ResumeOptions configures Resume.
 type ResumeOptions struct {
 	ChunkSize int64
 }
 
+// New creates a TUS client.
 func New(config Config) (*Client, error) {
 	if len(config.FilerURLs) == 0 {
 		return nil, fmt.Errorf("tus: filer urls are required")
@@ -106,6 +119,7 @@ func New(config Config) (*Client, error) {
 	return client, nil
 }
 
+// Options returns server TUS capability headers.
 func (c *Client) Options(ctx context.Context) (*Options, error) {
 	path, err := c.baseURL("/")
 	if err != nil {
@@ -134,6 +148,7 @@ func (c *Client) Options(ctx context.Context) (*Options, error) {
 	}, nil
 }
 
+// Create creates an upload resource without sending file bytes.
 func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptions) (*Upload, error) {
 	path, err := c.baseURL(targetPath)
 	if err != nil {
@@ -170,6 +185,7 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	}, nil
 }
 
+// CreateWithUpload creates an upload resource and sends the body in the create request.
 func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body io.Reader, opts CreateOptions) (*Upload, error) {
 	path, err := c.baseURL(targetPath)
 	if err != nil {
@@ -208,6 +224,7 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	}, nil
 }
 
+// Head returns current upload status for location.
 func (c *Client) Head(ctx context.Context, location string) (*Status, error) {
 	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
@@ -243,6 +260,7 @@ func (c *Client) Head(ctx context.Context, location string) (*Status, error) {
 	return &Status{Offset: offset, Size: size}, nil
 }
 
+// Patch appends bytes to an upload resource at offset.
 func (c *Client) Patch(ctx context.Context, location string, offset int64, body io.Reader, length int64) (*Status, error) {
 	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
@@ -278,6 +296,7 @@ func (c *Client) Patch(ctx context.Context, location string, offset int64, body 
 	return &Status{Offset: newOffset}, nil
 }
 
+// Terminate deletes an upload resource.
 func (c *Client) Terminate(ctx context.Context, location string) error {
 	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
@@ -295,6 +314,7 @@ func (c *Client) Terminate(ctx context.Context, location string) error {
 	return c.http.CheckStatus(ctx, request, http.StatusNoContent)
 }
 
+// Upload uploads body, using creation-with-upload unless ChunkSize is positive.
 func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, opts UploadOptions) (*Upload, error) {
 	if opts.Size < 0 {
 		return nil, fmt.Errorf("tus: size must be non-negative")
@@ -320,6 +340,7 @@ func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, 
 	return upload, nil
 }
 
+// Resume seeks body to the server offset and continues an existing upload.
 func (c *Client) Resume(ctx context.Context, location string, body io.ReadSeeker, opts ResumeOptions) (*Status, error) {
 	status, err := c.Head(ctx, location)
 	if err != nil {
@@ -477,6 +498,7 @@ func escapePath(path string) (string, error) {
 	return builder.String(), nil
 }
 
+// Close stops background endpoint health checks.
 func (c *Client) Close() {
 	c.endpoints.Close()
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
 
+// Config configures a master client.
 type Config struct {
 	BaseURLs       []string
 	HTTPClient     *http.Client
@@ -18,14 +19,19 @@ type Config struct {
 	EndpointPolicy EndpointPolicy
 }
 
+// RetryPolicy controls retry attempts for retryable master requests.
 type RetryPolicy = httpx.RetryPolicy
+
+// EndpointPolicy controls how the client chooses among master endpoints.
 type EndpointPolicy = httpx.EndpointPolicy
 
+// Client calls SeaweedFS master HTTP APIs.
 type Client struct {
 	endpoints *httpx.EndpointSet
 	http      *httpx.Client
 }
 
+// New creates a master client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
 		return nil, fmt.Errorf("master: base urls are required")
@@ -50,6 +56,7 @@ func New(config Config) (*Client, error) {
 	return client, nil
 }
 
+// AssignOptions configures a /dir/assign request.
 type AssignOptions struct {
 	Count               int
 	Collection          string
@@ -64,6 +71,7 @@ type AssignOptions struct {
 	Disk                string
 }
 
+// AssignResponse is returned by /dir/assign.
 type AssignResponse struct {
 	Count     int    `json:"count"`
 	FID       string `json:"fid"`
@@ -72,17 +80,20 @@ type AssignResponse struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// LookupOptions configures a /dir/lookup request.
 type LookupOptions struct {
 	Collection string
 	FileID     string
 	Read       bool
 }
 
+// LookupResponse is returned by /dir/lookup.
 type LookupResponse struct {
 	Locations []Location `json:"locations"`
 	Error     string     `json:"error,omitempty"`
 }
 
+// Location describes a volume server returned by master lookup.
 type Location struct {
 	URL        string `json:"url"`
 	PublicURL  string `json:"publicUrl"`
@@ -90,6 +101,7 @@ type Location struct {
 	Rack       string `json:"rack,omitempty"`
 }
 
+// GrowOptions configures a /vol/grow request.
 type GrowOptions struct {
 	Count              int
 	Collection         string
@@ -103,17 +115,20 @@ type GrowOptions struct {
 	Disk               string
 }
 
+// CountResponse is returned by master endpoints that report a count.
 type CountResponse struct {
 	Count int    `json:"count"`
 	Error string `json:"error,omitempty"`
 }
 
+// ClusterStatus describes master leader and peer state.
 type ClusterStatus struct {
 	IsLeader bool     `json:"IsLeader"`
 	Leader   string   `json:"Leader"`
 	Peers    []string `json:"Peers"`
 }
 
+// Assign asks the master to allocate one or more file IDs.
 func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignResponse, error) {
 	query := url.Values{}
 	httpx.AddInt(query, "count", opts.Count)
@@ -136,6 +151,7 @@ func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignRespons
 	return &out, err
 }
 
+// Lookup finds volume locations for a volume ID.
 func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions) (*LookupResponse, error) {
 	query := url.Values{}
 	httpx.AddString(query, "volumeId", volumeID)
@@ -153,6 +169,7 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 	return &out, err
 }
 
+// Vacuum triggers master volume vacuuming with the given garbage threshold.
 func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
 	query := url.Values{}
 	httpx.AddFloat64(query, "garbageThreshold", garbageThreshold)
@@ -162,6 +179,7 @@ func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
 	}, http.StatusOK)
 }
 
+// Grow asks the master to grow volumes.
 func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, error) {
 	query := url.Values{}
 	httpx.AddInt(query, "count", opts.Count)
@@ -183,6 +201,7 @@ func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, er
 	return &out, err
 }
 
+// DeleteCollection deletes a collection through the master.
 func (c *Client) DeleteCollection(ctx context.Context, collection string) error {
 	query := url.Values{}
 	query.Set("collection", collection)
@@ -192,6 +211,7 @@ func (c *Client) DeleteCollection(ctx context.Context, collection string) error 
 	}, http.StatusOK)
 }
 
+// ClusterStatus returns master leader and peer state.
 func (c *Client) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	var out ClusterStatus
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/cluster/status", httpx.Request{
@@ -200,12 +220,14 @@ func (c *Client) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	return &out, err
 }
 
+// Health checks the master health endpoint.
 func (c *Client) Health(ctx context.Context) error {
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/cluster/healthz", httpx.Request{
 		Method: http.MethodHead,
 	}, http.StatusOK)
 }
 
+// DirStatus returns raw directory status data from the master.
 func (c *Client) DirStatus(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/status", httpx.Request{
@@ -214,6 +236,7 @@ func (c *Client) DirStatus(ctx context.Context) (map[string]any, error) {
 	return out, err
 }
 
+// VolumeStatus returns raw volume status data from the master.
 func (c *Client) VolumeStatus(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/vol/status", httpx.Request{
@@ -222,6 +245,7 @@ func (c *Client) VolumeStatus(ctx context.Context) (map[string]any, error) {
 	return out, err
 }
 
+// Close stops background endpoint health checks.
 func (c *Client) Close() {
 	c.endpoints.Close()
 }

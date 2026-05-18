@@ -10,13 +10,17 @@ import (
 	"time"
 )
 
+// EndpointPolicyMode selects the endpoint selection strategy.
 type EndpointPolicyMode string
 
 const (
-	EndpointPolicyFailover   EndpointPolicyMode = "failover"
+	// EndpointPolicyFailover keeps using the active endpoint until it fails.
+	EndpointPolicyFailover EndpointPolicyMode = "failover"
+	// EndpointPolicyRoundRobin rotates the starting endpoint for each selection.
 	EndpointPolicyRoundRobin EndpointPolicyMode = "round-robin"
 )
 
+// EndpointHealthCheckPolicy configures background endpoint health probes.
 type EndpointHealthCheckPolicy struct {
 	Enabled          bool
 	Interval         time.Duration
@@ -25,6 +29,7 @@ type EndpointHealthCheckPolicy struct {
 	SuccessThreshold int
 }
 
+// EndpointCircuitBreakerPolicy configures endpoint failure isolation.
 type EndpointCircuitBreakerPolicy struct {
 	Enabled             bool
 	FailureThreshold    int
@@ -32,12 +37,14 @@ type EndpointCircuitBreakerPolicy struct {
 	HalfOpenMaxRequests int
 }
 
+// EndpointPolicy controls how an endpoint set chooses and marks endpoints.
 type EndpointPolicy struct {
 	Mode           EndpointPolicyMode
 	HealthCheck    EndpointHealthCheckPolicy
 	CircuitBreaker EndpointCircuitBreakerPolicy
 }
 
+// EndpointSet stores normalized endpoints and their health state.
 type EndpointSet struct {
 	mu     sync.RWMutex
 	urls   []string
@@ -50,11 +57,13 @@ type EndpointSet struct {
 	closeCh   chan struct{}
 }
 
+// EndpointCandidate is one endpoint candidate for a request path.
 type EndpointCandidate struct {
 	Index int
 	URL   string
 }
 
+// EndpointLease represents one selected endpoint that must be finished.
 type EndpointLease struct {
 	Index int
 	URL   string
@@ -71,10 +80,12 @@ type endpointState struct {
 	halfOpenRequests int
 }
 
+// NewEndpointSet creates an endpoint set with the default endpoint policy.
 func NewEndpointSet(rawURLs []string) (*EndpointSet, error) {
 	return NewEndpointSetWithPolicy(rawURLs, EndpointPolicy{})
 }
 
+// NewEndpointSetWithPolicy creates an endpoint set with policy.
 func NewEndpointSetWithPolicy(rawURLs []string, policy EndpointPolicy) (*EndpointSet, error) {
 	urls, err := NormalizeBaseURLs(rawURLs)
 	if err != nil {
@@ -92,6 +103,7 @@ func NewEndpointSetWithPolicy(rawURLs []string, policy EndpointPolicy) (*Endpoin
 	}, nil
 }
 
+// NormalizeEndpointPolicy applies policy defaults and validates the mode.
 func NormalizeEndpointPolicy(policy EndpointPolicy) (EndpointPolicy, error) {
 	if policy.Mode == "" {
 		policy.Mode = EndpointPolicyFailover
@@ -129,6 +141,7 @@ func NormalizeEndpointPolicy(policy EndpointPolicy) (EndpointPolicy, error) {
 	return policy, nil
 }
 
+// NormalizeBaseURLs validates, normalizes, and deduplicates base URLs.
 func NormalizeBaseURLs(rawURLs []string) ([]string, error) {
 	if len(rawURLs) == 0 {
 		return nil, fmt.Errorf("httpx: base urls are required")
@@ -152,6 +165,7 @@ func NormalizeBaseURLs(rawURLs []string) ([]string, error) {
 	return urls, nil
 }
 
+// NormalizeBaseURL validates and normalizes one absolute HTTP base URL.
 func NormalizeBaseURL(raw string) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -166,6 +180,7 @@ func NormalizeBaseURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
+// URLs returns a snapshot of normalized base URLs.
 func (s *EndpointSet) URLs() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -175,6 +190,7 @@ func (s *EndpointSet) URLs() []string {
 	return urls
 }
 
+// URL joins path with the currently active base URL.
 func (s *EndpointSet) URL(path string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -182,6 +198,7 @@ func (s *EndpointSet) URL(path string) string {
 	return s.urls[s.active] + path
 }
 
+// Candidates returns endpoint candidates for path in policy order.
 func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,6 +229,7 @@ func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
 	return append(halfOpen, candidates...)
 }
 
+// Lease selects one available endpoint lease for path.
 func (s *EndpointSet) Lease(path string) (*EndpointLease, error) {
 	for _, candidate := range s.Candidates(path) {
 		available, halfOpen := s.beginCandidate(candidate.Index)
@@ -228,6 +246,7 @@ func (s *EndpointSet) Lease(path string) (*EndpointLease, error) {
 	return nil, fmt.Errorf("httpx: no available endpoints")
 }
 
+// Finish records whether the leased endpoint attempt succeeded.
 func (l *EndpointLease) Finish(success bool) {
 	if l == nil || l.set == nil {
 		return
@@ -235,10 +254,12 @@ func (l *EndpointLease) Finish(success bool) {
 	l.set.finishCandidate(l.Index, l.halfOpen, success)
 }
 
+// MarkSuccess records a successful endpoint attempt.
 func (s *EndpointSet) MarkSuccess(index int) {
 	s.RecordSuccess(index)
 }
 
+// RecordSuccess records a successful endpoint attempt.
 func (s *EndpointSet) RecordSuccess(index int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -249,6 +270,7 @@ func (s *EndpointSet) RecordSuccess(index int) {
 	s.recordSuccessLocked(index)
 }
 
+// RecordFailure records a failed endpoint attempt.
 func (s *EndpointSet) RecordFailure(index int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -259,6 +281,7 @@ func (s *EndpointSet) RecordFailure(index int) {
 	s.recordFailureLocked(index, time.Now())
 }
 
+// FinishCandidate records whether the endpoint candidate succeeded.
 func (s *EndpointSet) FinishCandidate(index int, success bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -342,6 +365,7 @@ func (s *EndpointSet) recordFailureLocked(index int, now time.Time) {
 	}
 }
 
+// StartHealthCheck starts background health probes when health checks are enabled.
 func (s *EndpointSet) StartHealthCheck(client *http.Client, method string, path string) {
 	if !s.policy.HealthCheck.Enabled {
 		return
@@ -366,6 +390,7 @@ func (s *EndpointSet) StartHealthCheck(client *http.Client, method string, path 
 	}()
 }
 
+// Close stops background health checks.
 func (s *EndpointSet) Close() {
 	s.closeOnce.Do(func() {
 		close(s.closeCh)

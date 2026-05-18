@@ -12,11 +12,13 @@ import (
 	"time"
 )
 
+// RetryPolicy controls retry attempts for retryable HTTP methods.
 type RetryPolicy struct {
 	MaxAttempts int
 	Wait        time.Duration
 }
 
+// Config configures a shared HTTP API client.
 type Config struct {
 	HTTPClient  *http.Client
 	UserAgent   string
@@ -24,6 +26,7 @@ type Config struct {
 	Retry       RetryPolicy
 }
 
+// Client wraps an HTTP client with common SeaweedFS request behavior.
 type Client struct {
 	httpClient  *http.Client
 	userAgent   string
@@ -31,6 +34,7 @@ type Client struct {
 	retry       RetryPolicy
 }
 
+// Request describes one HTTP request.
 type Request struct {
 	Method        string
 	URL           string
@@ -40,6 +44,7 @@ type Request struct {
 	ContentLength int64
 }
 
+// Error describes a non-success HTTP response.
 type Error struct {
 	Method     string
 	URL        string
@@ -48,6 +53,7 @@ type Error struct {
 	Body       string
 }
 
+// Error formats the HTTP response error.
 func (e *Error) Error() string {
 	if e.Body == "" {
 		return fmt.Sprintf("%s %s: unexpected status %d", e.Method, e.URL, e.StatusCode)
@@ -55,6 +61,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s %s: unexpected status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
 }
 
+// NewClient creates a shared HTTP API client.
 func NewClient(config Config) *Client {
 	return &Client{
 		httpClient:  config.HTTPClient,
@@ -64,6 +71,7 @@ func NewClient(config Config) *Client {
 	}
 }
 
+// Do sends request through the configured HTTP client.
 func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error) {
 	if request.Method == "" {
 		return nil, fmt.Errorf("httpx: method is required")
@@ -111,6 +119,7 @@ func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error
 	return nil, lastErr
 }
 
+// DoEndpoint sends request to an endpoint selected from endpoints.
 func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request) (*http.Response, error) {
 	if endpoints == nil {
 		return nil, fmt.Errorf("httpx: endpoints are required")
@@ -160,6 +169,7 @@ func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path st
 	return nil, lastErr
 }
 
+// DecodeJSON sends request and decodes a successful JSON response into out.
 func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error {
 	resp, err := c.Do(ctx, request)
 	if err != nil {
@@ -179,6 +189,7 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 	return nil
 }
 
+// DecodeJSONEndpoint sends request through endpoints and decodes JSON into out.
 func (c *Client) DecodeJSONEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request, out any) error {
 	resp, err := c.DoEndpoint(ctx, endpoints, path, request)
 	if err != nil {
@@ -198,6 +209,7 @@ func (c *Client) DecodeJSONEndpoint(ctx context.Context, endpoints *EndpointSet,
 	return nil
 }
 
+// CheckStatus sends request and requires one of the expected response statuses.
 func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...int) error {
 	resp, err := c.Do(ctx, request)
 	if err != nil {
@@ -213,6 +225,7 @@ func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...i
 	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 }
 
+// CheckStatusEndpoint sends request through endpoints and requires an expected status.
 func (c *Client) CheckStatusEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request, expected ...int) error {
 	resp, err := c.DoEndpoint(ctx, endpoints, path, request)
 	if err != nil {
@@ -265,6 +278,7 @@ func responseURL(resp *http.Response, fallback string) string {
 	return fallback
 }
 
+// ResponseError reads resp and returns an Error.
 func ResponseError(method, rawURL string, resp *http.Response) error {
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if readErr != nil {
@@ -279,6 +293,7 @@ func ResponseError(method, rawURL string, resp *http.Response) error {
 	}
 }
 
+// IsHTTPStatus reports whether err is an Error with a status in [min, max].
 func IsHTTPStatus(err error, min int, max int) bool {
 	httpErr, ok := err.(*Error)
 	if !ok {
@@ -307,24 +322,28 @@ func isEndpointFailureResponse(status int) bool {
 	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
 }
 
+// AddInt adds key to query when value is non-zero.
 func AddInt(query url.Values, key string, value int) {
 	if value != 0 {
 		query.Set(key, strconv.Itoa(value))
 	}
 }
 
+// AddInt64 adds key to query when value is non-zero.
 func AddInt64(query url.Values, key string, value int64) {
 	if value != 0 {
 		query.Set(key, strconv.FormatInt(value, 10))
 	}
 }
 
+// AddFloat64 adds key to query when value is non-zero.
 func AddFloat64(query url.Values, key string, value float64) {
 	if value != 0 {
 		query.Set(key, strconv.FormatFloat(value, 'f', -1, 64))
 	}
 }
 
+// AddString adds key to query when value is not empty.
 func AddString(query url.Values, key string, value string) {
 	if value != "" {
 		query.Set(key, value)
