@@ -15,6 +15,7 @@ type Config struct {
 	FilerURL        string
 	TusBasePath     string
 	S3URL           string
+	IAMURL          string
 	Region          string
 	AccessKeyID     string
 	SecretAccessKey string

@@ -21,8 +21,10 @@ type Cluster struct {
 	MasterURL string
 	VolumeURL string
 	FilerURL  string
+	S3URL     string
 
 	masterAddress string
+	filerAddress  string
 	dataDir       string
 	cmds          []*exec.Cmd
 	logs          []string
@@ -81,6 +83,7 @@ func StartMasterVolumeFiler(t *testing.T, ctx context.Context) *Cluster {
 	mkdir(t, filerDir)
 
 	cluster.FilerURL = fmt.Sprintf("http://127.0.0.1:%d", filerPort)
+	cluster.filerAddress = fmt.Sprintf("127.0.0.1:%d", filerPort)
 	cluster.start(t, ctx, findWeedBinary(t), "filer",
 		"-port", fmt.Sprint(filerPort),
 		"-port.grpc", fmt.Sprint(filerGRPCPort),
@@ -90,6 +93,27 @@ func StartMasterVolumeFiler(t *testing.T, ctx context.Context) *Cluster {
 		"-tusBasePath", "/.tus",
 	)
 	cluster.waitForHTTP(t, ctx, cluster.FilerURL+"/")
+	return cluster
+}
+
+func StartMasterVolumeFilerS3(t *testing.T, ctx context.Context) *Cluster {
+	t.Helper()
+
+	cluster := StartMasterVolumeFiler(t, ctx)
+	s3Port, s3GRPCPort := freeDistinctPortPair(t, cluster.usedPorts()...)
+	cluster.S3URL = fmt.Sprintf("http://127.0.0.1:%d", s3Port)
+	cluster.startWithEnv(t, ctx, findWeedBinary(t), []string{
+		"AWS_ACCESS_KEY_ID=seaweed_admin",
+		"AWS_SECRET_ACCESS_KEY=seaweed_secret",
+	}, "s3",
+		"-port", fmt.Sprint(s3Port),
+		"-port.grpc", fmt.Sprint(s3GRPCPort),
+		"-port.iceberg", "0",
+		"-ip.bind", "127.0.0.1",
+		"-filer", cluster.filerAddress,
+		"-iam.readOnly=false",
+	)
+	cluster.waitForHTTP(t, ctx, cluster.S3URL+"/")
 	return cluster
 }
 
@@ -117,7 +141,16 @@ func (c *Cluster) Stop() {
 func (c *Cluster) start(t *testing.T, ctx context.Context, name string, args ...string) {
 	t.Helper()
 
+	c.startWithEnv(t, ctx, name, nil, args...)
+}
+
+func (c *Cluster) startWithEnv(t *testing.T, ctx context.Context, name string, env []string, args ...string) {
+	t.Helper()
+
 	cmd := exec.CommandContext(ctx, name, args...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	logPath := filepath.Join(c.dataDir, args[0]+".log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
