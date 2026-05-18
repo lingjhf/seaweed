@@ -41,12 +41,19 @@ type Client struct {
 
 	mu        sync.RWMutex
 	locations map[string]locationCacheEntry
+	lookups   map[string]*lookupFlight
 }
 
 type locationCacheEntry struct {
 	baseURLs  []string
 	client    *volume.Client
 	expiresAt time.Time
+}
+
+type lookupFlight struct {
+	done   chan struct{}
+	client *volume.Client
+	err    error
 }
 
 type PutOptions struct {
@@ -91,6 +98,7 @@ func New(config Config) (*Client, error) {
 		usePublicURLs:    config.UsePublicURLs,
 		locationCacheTTL: config.LocationCacheTTL,
 		locations:        map[string]locationCacheEntry{},
+		lookups:          map[string]*lookupFlight{},
 	}, nil
 }
 
@@ -201,7 +209,20 @@ func (c *Client) volumeClientFor(ctx context.Context, fileID string) (*volume.Cl
 	if volumeClient, ok := c.cachedVolumeClient(volumeID); ok {
 		return volumeClient, nil
 	}
+	flight, leader, cached := c.beginLookup(volumeID)
+	if cached != nil {
+		return cached, nil
+	}
+	if !leader {
+		return waitLookup(ctx, flight)
+	}
 
+	volumeClient, err := c.lookupVolumeClient(ctx, volumeID)
+	c.finishLookup(volumeID, flight, volumeClient, err)
+	return volumeClient, err
+}
+
+func (c *Client) lookupVolumeClient(ctx context.Context, volumeID string) (*volume.Client, error) {
 	lookup, err := c.master.Lookup(ctx, volumeID, master.LookupOptions{Read: true})
 	if err != nil {
 		return nil, err
@@ -266,6 +287,45 @@ func (c *Client) cachedVolumeClient(volumeID string) (*volume.Client, bool) {
 		c.forgetExpired(volumeID, now)
 	}
 	return nil, false
+}
+
+func (c *Client) beginLookup(volumeID string) (*lookupFlight, bool, *volume.Client) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if entry, ok := c.locations[volumeID]; ok && entry.valid(now) {
+		return nil, false, entry.client
+	}
+	if flight, ok := c.lookups[volumeID]; ok {
+		return flight, false, nil
+	}
+	flight := &lookupFlight{
+		done: make(chan struct{}),
+	}
+	c.lookups[volumeID] = flight
+	return flight, true, nil
+}
+
+func (c *Client) finishLookup(volumeID string, flight *lookupFlight, volumeClient *volume.Client, err error) {
+	flight.client = volumeClient
+	flight.err = err
+
+	c.mu.Lock()
+	if c.lookups[volumeID] == flight {
+		delete(c.lookups, volumeID)
+	}
+	c.mu.Unlock()
+	close(flight.done)
+}
+
+func waitLookup(ctx context.Context, flight *lookupFlight) (*volume.Client, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-flight.done:
+		return flight.client, flight.err
+	}
 }
 
 func (entry locationCacheEntry) valid(now time.Time) bool {

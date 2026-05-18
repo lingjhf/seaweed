@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -422,6 +423,111 @@ func TestCloseClearsLocationCache(t *testing.T) {
 	assertGetBody(t, client, "9,abc", "body")
 	if lookups.Load() != 2 {
 		t.Fatalf("lookups = %d, want cache cleared by Close", lookups.Load())
+	}
+}
+
+func TestConcurrentGetCoalescesLookup(t *testing.T) {
+	t.Parallel()
+
+	volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("body"))
+	}))
+	defer volumeServer.Close()
+
+	var lookups atomic.Int32
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lookups.Add(1)
+		time.Sleep(50 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"locations": []map[string]string{
+				{
+					"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+				},
+			},
+		})
+	}))
+	defer masterServer.Close()
+
+	client := newTestClient(t, masterServer, false)
+	start := make(chan struct{})
+	errs := make(chan error, 16)
+	for range 16 {
+		go func() {
+			<-start
+			resp, err := client.Get(context.Background(), "9,abc", blob.GetOptions{})
+			if err != nil {
+				errs <- err
+				return
+			}
+			_, err = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			errs <- err
+		}()
+	}
+
+	close(start)
+	for range 16 {
+		if err := <-errs; err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+	}
+	if lookups.Load() != 1 {
+		t.Fatalf("lookups = %d, want coalesced 1", lookups.Load())
+	}
+}
+
+func TestLookupWaitRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("body"))
+	}))
+	defer volumeServer.Close()
+
+	var lookups atomic.Int32
+	var startOnce sync.Once
+	lookupStarted := make(chan struct{})
+	releaseLookup := make(chan struct{})
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lookups.Add(1)
+		startOnce.Do(func() {
+			close(lookupStarted)
+		})
+		<-releaseLookup
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"locations": []map[string]string{
+				{
+					"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+				},
+			},
+		})
+	}))
+	defer masterServer.Close()
+
+	client := newTestClient(t, masterServer, false)
+	leaderErr := make(chan error, 1)
+	go func() {
+		resp, err := client.Get(context.Background(), "9,abc", blob.GetOptions{})
+		if err != nil {
+			leaderErr <- err
+			return
+		}
+		resp.Body.Close()
+		leaderErr <- nil
+	}()
+
+	<-lookupStarted
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.Get(ctx, "9,abc", blob.GetOptions{}); err != context.Canceled {
+		t.Fatalf("Get() error = %v, want context.Canceled", err)
+	}
+	close(releaseLookup)
+	if err := <-leaderErr; err != nil {
+		t.Fatalf("leader Get() error = %v", err)
+	}
+	if lookups.Load() != 1 {
+		t.Fatalf("lookups = %d, want waiting request to share lookup", lookups.Load())
 	}
 }
 
