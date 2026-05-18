@@ -10,6 +10,7 @@ import (
 	"github.com/lingjhf/seaweed/filer"
 	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
+	"github.com/lingjhf/seaweed/tus"
 	"github.com/lingjhf/seaweed/volume"
 )
 
@@ -22,6 +23,7 @@ type Client struct {
 	volume *volume.Client
 	blob   *blob.Client
 	filer  *filer.Client
+	tus    *tus.Client
 }
 
 func New(config Config, opts ...Option) (*Client, error) {
@@ -91,6 +93,12 @@ func New(config Config, opts ...Option) (*Client, error) {
 		BaseURL: config.FilerURL,
 		HTTP:    transport,
 	})
+	client.tus = tus.New(tus.Config{
+		FilerURL:    config.FilerURL,
+		BasePath:    config.TusBasePath,
+		HTTP:        transport,
+		ContentType: "application/offset+octet-stream",
+	})
 	return client, nil
 }
 
@@ -112,6 +120,10 @@ func (c *Client) Blob() *blob.Client {
 
 func (c *Client) Filer() *filer.Client {
 	return c.filer
+}
+
+func (c *Client) TUS() *tus.Client {
+	return c.tus
 }
 
 func normalizeBaseURL(raw string) (string, error) {
