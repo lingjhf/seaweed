@@ -1,4 +1,4 @@
-.PHONY: test test-race vet integration coverage bench ci check check-full
+.PHONY: test test-race vet integration coverage bench ci check check-full release-check
 
 WEED_BINARY ?= ./weed
 COVER_MIN ?= 90.0
@@ -26,3 +26,5 @@ ci: test test-race vet
 check: test test-race vet integration
 
 check-full: check coverage
+
+release-check: check-full
