@@ -20,23 +20,25 @@ const (
 )
 
 type Config struct {
-	MasterURLs      []string
-	VolumeURLs      []string
-	FilerURLs       []string
-	TUSBasePath     string
-	S3URL           string
-	IAMURL          string
-	Region          string
-	AccessKeyID     string
-	SecretAccessKey string
-	BearerToken     string
-	UserAgent       string
-	UsePublicURLs   bool
-	Retry           RetryPolicy
+	MasterURLs           []string
+	VolumeURLs           []string
+	FilerURLs            []string
+	TUSBasePath          string
+	S3URL                string
+	IAMURL               string
+	Region               string
+	AccessKeyID          string
+	SecretAccessKey      string
+	BearerToken          string
+	UserAgent            string
+	UsePublicURLs        bool
+	Retry                RetryPolicy
+	BlobLocationCacheTTL time.Duration
 
 	EndpointPolicy       EndpointPolicy
 	MasterEndpointPolicy EndpointPolicy
 	VolumeEndpointPolicy EndpointPolicy
+	BlobEndpointPolicy   EndpointPolicy
 	FilerEndpointPolicy  EndpointPolicy
 	TUSEndpointPolicy    EndpointPolicy
 }

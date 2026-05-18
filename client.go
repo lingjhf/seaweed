@@ -61,6 +61,9 @@ func New(config Config, opts ...Option) (*Client, error) {
 	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.VolumeEndpointPolicy, config.EndpointPolicy)); err != nil {
 		return nil, fmt.Errorf("seaweed: invalid volume endpoint policy: %w", err)
 	}
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.BlobEndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid blob endpoint policy: %w", err)
+	}
 	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.FilerEndpointPolicy, config.EndpointPolicy)); err != nil {
 		return nil, fmt.Errorf("seaweed: invalid filer endpoint policy: %w", err)
 	}
@@ -135,12 +138,14 @@ func New(config Config, opts ...Option) (*Client, error) {
 		}
 	}
 	client.blob, err = blob.New(blob.Config{
-		Master:        client.master,
-		HTTPClient:    applied.httpClient,
-		UserAgent:     config.UserAgent,
-		BearerToken:   config.BearerToken,
-		Retry:         config.Retry,
-		UsePublicURLs: config.UsePublicURLs,
+		Master:           client.master,
+		HTTPClient:       applied.httpClient,
+		UserAgent:        config.UserAgent,
+		BearerToken:      config.BearerToken,
+		Retry:            config.Retry,
+		EndpointPolicy:   endpointPolicyOrDefault(config.BlobEndpointPolicy, config.EndpointPolicy),
+		UsePublicURLs:    config.UsePublicURLs,
+		LocationCacheTTL: config.BlobLocationCacheTTL,
 	})
 	if err != nil {
 		return nil, err
@@ -204,6 +209,9 @@ func (c *Client) Close() {
 	}
 	if c.volume != nil {
 		c.volume.Close()
+	}
+	if c.blob != nil {
+		c.blob.Close()
 	}
 	if c.filer != nil {
 		c.filer.Close()

@@ -127,17 +127,21 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 
 	httpClient := &http.Client{}
 	client, err := seaweed.New(seaweed.Config{
-		MasterURLs:      []string{"http://127.0.0.1:9333/master/?q=1#fragment"},
-		VolumeURLs:      []string{"http://127.0.0.1:8080/volume/"},
-		FilerURLs:       []string{"http://127.0.0.1:8888/filer/"},
-		TUSBasePath:     "uploads",
-		S3URL:           "http://127.0.0.1:8333/s3/",
-		IAMURL:          "http://127.0.0.1:8333/iam/",
-		AccessKeyID:     "access",
-		SecretAccessKey: "secret",
-		UserAgent:       "seaweed-test",
-		BearerToken:     "token",
-		UsePublicURLs:   true,
+		MasterURLs:           []string{"http://127.0.0.1:9333/master/?q=1#fragment"},
+		VolumeURLs:           []string{"http://127.0.0.1:8080/volume/"},
+		FilerURLs:            []string{"http://127.0.0.1:8888/filer/"},
+		TUSBasePath:          "uploads",
+		S3URL:                "http://127.0.0.1:8333/s3/",
+		IAMURL:               "http://127.0.0.1:8333/iam/",
+		AccessKeyID:          "access",
+		SecretAccessKey:      "secret",
+		UserAgent:            "seaweed-test",
+		BearerToken:          "token",
+		UsePublicURLs:        true,
+		BlobLocationCacheTTL: 10 * time.Second,
+		BlobEndpointPolicy: seaweed.EndpointPolicy{
+			Mode: seaweed.EndpointPolicyRoundRobin,
+		},
 	}, seaweed.WithHTTPClient(httpClient))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -164,6 +168,12 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 	}
 	if config.Retry.MaxAttempts != 3 {
 		t.Fatalf("Retry.MaxAttempts = %d, want 3", config.Retry.MaxAttempts)
+	}
+	if config.BlobLocationCacheTTL != 10*time.Second {
+		t.Fatalf("BlobLocationCacheTTL = %s, want 10s", config.BlobLocationCacheTTL)
+	}
+	if config.BlobEndpointPolicy.Mode != seaweed.EndpointPolicyRoundRobin {
+		t.Fatalf("BlobEndpointPolicy.Mode = %q, want round-robin", config.BlobEndpointPolicy.Mode)
 	}
 	if client.Master() == nil || client.Volume() == nil || client.Blob() == nil || client.Filer() == nil || client.TUS() == nil {
 		t.Fatal("client accessors returned nil")
@@ -334,14 +344,36 @@ func TestNewRejectsInvalidURLs(t *testing.T) {
 func TestNewRejectsInvalidEndpointPolicy(t *testing.T) {
 	t.Parallel()
 
-	_, err := seaweed.New(seaweed.Config{
-		MasterURLs: []string{"http://127.0.0.1:9333"},
-		EndpointPolicy: seaweed.EndpointPolicy{
-			Mode: "random",
+	tests := []struct {
+		name   string
+		config seaweed.Config
+	}{
+		{
+			name: "global",
+			config: seaweed.Config{
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				EndpointPolicy: seaweed.EndpointPolicy{
+					Mode: "random",
+				},
+			},
 		},
-	})
-	if err == nil {
-		t.Fatal("New() error = nil, want invalid endpoint policy error")
+		{
+			name: "blob",
+			config: seaweed.Config{
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				BlobEndpointPolicy: seaweed.EndpointPolicy{
+					Mode: "random",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := seaweed.New(tt.config); err == nil {
+				t.Fatal("New() error = nil, want invalid endpoint policy error")
+			}
+		})
 	}
 }
 

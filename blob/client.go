@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
@@ -15,26 +16,37 @@ import (
 )
 
 type Config struct {
-	Master        *master.Client
-	HTTPClient    *http.Client
-	UserAgent     string
-	BearerToken   string
-	Retry         RetryPolicy
-	UsePublicURLs bool
+	Master           *master.Client
+	HTTPClient       *http.Client
+	UserAgent        string
+	BearerToken      string
+	Retry            RetryPolicy
+	EndpointPolicy   EndpointPolicy
+	UsePublicURLs    bool
+	LocationCacheTTL time.Duration
 }
 
 type RetryPolicy = httpx.RetryPolicy
+type EndpointPolicy = httpx.EndpointPolicy
 
 type Client struct {
-	master        *master.Client
-	httpClient    *http.Client
-	userAgent     string
-	bearerToken   string
-	retry         RetryPolicy
-	usePublicURLs bool
+	master           *master.Client
+	httpClient       *http.Client
+	userAgent        string
+	bearerToken      string
+	retry            RetryPolicy
+	endpointPolicy   EndpointPolicy
+	usePublicURLs    bool
+	locationCacheTTL time.Duration
 
 	mu        sync.RWMutex
-	locations map[string]string
+	locations map[string]locationCacheEntry
+}
+
+type locationCacheEntry struct {
+	baseURLs  []string
+	client    *volume.Client
+	expiresAt time.Time
 }
 
 type PutOptions struct {
@@ -65,14 +77,20 @@ func New(config Config) (*Client, error) {
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
 	}
+	endpointPolicy, err := httpx.NormalizeEndpointPolicy(config.EndpointPolicy)
+	if err != nil {
+		return nil, fmt.Errorf("blob: invalid endpoint policy: %w", err)
+	}
 	return &Client{
-		master:        config.Master,
-		httpClient:    config.HTTPClient,
-		userAgent:     config.UserAgent,
-		bearerToken:   config.BearerToken,
-		retry:         config.Retry,
-		usePublicURLs: config.UsePublicURLs,
-		locations:     map[string]string{},
+		master:           config.Master,
+		httpClient:       config.HTTPClient,
+		userAgent:        config.UserAgent,
+		bearerToken:      config.BearerToken,
+		retry:            config.Retry,
+		endpointPolicy:   endpointPolicy,
+		usePublicURLs:    config.UsePublicURLs,
+		locationCacheTTL: config.LocationCacheTTL,
+		locations:        map[string]locationCacheEntry{},
 	}, nil
 }
 
@@ -95,10 +113,11 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 	if err != nil {
 		return nil, err
 	}
-	volumeClient, err := c.volumeClient(baseURL)
+	volumeClient, err := c.volumeClient([]string{baseURL})
 	if err != nil {
 		return nil, err
 	}
+	defer volumeClient.Close()
 	put, err := volumeClient.Put(ctx, assigned.FID, body, volume.PutOptions{
 		ContentType:   opts.ContentType,
 		ContentLength: opts.ContentLength,
@@ -107,7 +126,9 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 	if err != nil {
 		return nil, err
 	}
-	c.remember(volumeID(assigned.FID), baseURL)
+	if _, err := c.remember(volumeID(assigned.FID), []string{baseURL}); err != nil {
+		return nil, err
+	}
 	return &PutResponse{
 		FileID: assigned.FID,
 		Size:   put.Size,
@@ -116,11 +137,7 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 }
 
 func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http.Response, error) {
-	baseURL, err := c.location(ctx, fileID)
-	if err != nil {
-		return nil, err
-	}
-	volumeClient, err := c.volumeClient(baseURL)
+	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -135,11 +152,7 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 }
 
 func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
-	baseURL, err := c.location(ctx, fileID)
-	if err != nil {
-		return nil, err
-	}
-	volumeClient, err := c.volumeClient(baseURL)
+	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,11 +167,7 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 }
 
 func (c *Client) Delete(ctx context.Context, fileID string) error {
-	baseURL, err := c.location(ctx, fileID)
-	if err != nil {
-		return err
-	}
-	volumeClient, err := c.volumeClient(baseURL)
+	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
 		return err
 	}
@@ -172,42 +181,39 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 	return nil
 }
 
-func (c *Client) volumeClient(baseURL string) (*volume.Client, error) {
+func (c *Client) volumeClient(baseURLs []string) (*volume.Client, error) {
 	return volume.New(volume.Config{
-		BaseURLs:    []string{baseURL},
-		HTTPClient:  c.httpClient,
-		UserAgent:   c.userAgent,
-		BearerToken: c.bearerToken,
-		Retry:       c.retry,
+		BaseURLs:       baseURLs,
+		HTTPClient:     c.httpClient,
+		UserAgent:      c.userAgent,
+		BearerToken:    c.bearerToken,
+		Retry:          c.retry,
+		EndpointPolicy: c.endpointPolicy,
 	})
 }
 
-func (c *Client) location(ctx context.Context, fileID string) (string, error) {
+func (c *Client) volumeClientFor(ctx context.Context, fileID string) (*volume.Client, error) {
 	volumeID := volumeID(fileID)
 	if volumeID == "" {
-		return "", fmt.Errorf("blob: invalid file id %q", fileID)
+		return nil, fmt.Errorf("blob: invalid file id %q", fileID)
 	}
 
-	c.mu.RLock()
-	baseURL := c.locations[volumeID]
-	c.mu.RUnlock()
-	if baseURL != "" {
-		return baseURL, nil
+	if volumeClient, ok := c.cachedVolumeClient(volumeID); ok {
+		return volumeClient, nil
 	}
 
 	lookup, err := c.master.Lookup(ctx, volumeID, master.LookupOptions{Read: true})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(lookup.Locations) == 0 {
-		return "", fmt.Errorf("blob: no locations for volume %s", volumeID)
+		return nil, fmt.Errorf("blob: no locations for volume %s", volumeID)
 	}
-	baseURL, err = c.lookupVolumeURL(lookup.Locations[0])
+	baseURLs, err := c.lookupVolumeURLs(lookup.Locations)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	c.remember(volumeID, baseURL)
-	return baseURL, nil
+	return c.remember(volumeID, baseURLs)
 }
 
 func (c *Client) assignedVolumeURL(resp *master.AssignResponse) (string, error) {
@@ -226,16 +232,120 @@ func (c *Client) lookupVolumeURL(location master.Location) (string, error) {
 	return normalizeVolumeURL(raw)
 }
 
-func (c *Client) remember(volumeID string, baseURL string) {
+func (c *Client) lookupVolumeURLs(locations []master.Location) ([]string, error) {
+	baseURLs := make([]string, 0, len(locations))
+	seen := map[string]struct{}{}
+	for _, location := range locations {
+		baseURL, err := c.lookupVolumeURL(location)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[baseURL]; ok {
+			continue
+		}
+		seen[baseURL] = struct{}{}
+		baseURLs = append(baseURLs, baseURL)
+	}
+	if len(baseURLs) == 0 {
+		return nil, fmt.Errorf("blob: no locations for volume")
+	}
+	return baseURLs, nil
+}
+
+func (c *Client) cachedVolumeClient(volumeID string) (*volume.Client, bool) {
+	now := time.Now()
+	c.mu.RLock()
+	entry, ok := c.locations[volumeID]
+	if ok && entry.valid(now) {
+		c.mu.RUnlock()
+		return entry.client, true
+	}
+	c.mu.RUnlock()
+
+	if ok {
+		c.forgetExpired(volumeID, now)
+	}
+	return nil, false
+}
+
+func (entry locationCacheEntry) valid(now time.Time) bool {
+	return entry.client != nil && len(entry.baseURLs) > 0 && (entry.expiresAt.IsZero() || now.Before(entry.expiresAt))
+}
+
+func (c *Client) remember(volumeID string, baseURLs []string) (*volume.Client, error) {
+	volumeClient, err := c.volumeClient(baseURLs)
+	if err != nil {
+		return nil, err
+	}
+	entry := locationCacheEntry{
+		baseURLs:  cloneStrings(baseURLs),
+		client:    volumeClient,
+		expiresAt: c.locationExpiresAt(),
+	}
+
+	var oldClient *volume.Client
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.locations[volumeID] = baseURL
+	if oldEntry, ok := c.locations[volumeID]; ok {
+		oldClient = oldEntry.client
+	}
+	c.locations[volumeID] = entry
+	c.mu.Unlock()
+	if oldClient != nil {
+		oldClient.Close()
+	}
+	return volumeClient, nil
 }
 
 func (c *Client) forget(volumeID string) {
+	var oldClient *volume.Client
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.locations, volumeID)
+	if oldEntry, ok := c.locations[volumeID]; ok {
+		oldClient = oldEntry.client
+		delete(c.locations, volumeID)
+	}
+	c.mu.Unlock()
+	if oldClient != nil {
+		oldClient.Close()
+	}
+}
+
+func (c *Client) forgetExpired(volumeID string, now time.Time) {
+	var oldClient *volume.Client
+	c.mu.Lock()
+	if oldEntry, ok := c.locations[volumeID]; ok && !oldEntry.valid(now) {
+		oldClient = oldEntry.client
+		delete(c.locations, volumeID)
+	}
+	c.mu.Unlock()
+	if oldClient != nil {
+		oldClient.Close()
+	}
+}
+
+func (c *Client) locationExpiresAt() time.Time {
+	if c.locationCacheTTL <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(c.locationCacheTTL)
+}
+
+func (c *Client) Close() {
+	c.mu.Lock()
+	locations := c.locations
+	c.locations = map[string]locationCacheEntry{}
+	c.mu.Unlock()
+
+	for _, entry := range locations {
+		if entry.client != nil {
+			entry.client.Close()
+		}
+	}
+}
+
+func cloneStrings(values []string) []string {
+	out := make([]string, len(values))
+	copy(out, values)
+	return out
 }
 
 func normalizeVolumeURL(raw string) (string, error) {
