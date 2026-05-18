@@ -16,13 +16,21 @@ import (
 
 type Config struct {
 	Master        *master.Client
-	HTTP          *httpx.Client
+	HTTPClient    *http.Client
+	UserAgent     string
+	BearerToken   string
+	Retry         RetryPolicy
 	UsePublicURLs bool
 }
 
+type RetryPolicy = httpx.RetryPolicy
+
 type Client struct {
 	master        *master.Client
-	http          *httpx.Client
+	httpClient    *http.Client
+	userAgent     string
+	bearerToken   string
+	retry         RetryPolicy
 	usePublicURLs bool
 
 	mu        sync.RWMutex
@@ -50,13 +58,22 @@ type GetOptions struct {
 	Range string
 }
 
-func New(config Config) *Client {
+func New(config Config) (*Client, error) {
+	if config.Master == nil {
+		return nil, fmt.Errorf("blob: master client is required")
+	}
+	if config.HTTPClient == nil {
+		config.HTTPClient = http.DefaultClient
+	}
 	return &Client{
 		master:        config.Master,
-		http:          config.HTTP,
+		httpClient:    config.HTTPClient,
+		userAgent:     config.UserAgent,
+		bearerToken:   config.BearerToken,
+		retry:         config.Retry,
 		usePublicURLs: config.UsePublicURLs,
 		locations:     map[string]string{},
-	}
+	}, nil
 }
 
 func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*PutResponse, error) {
@@ -78,10 +95,11 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 	if err != nil {
 		return nil, err
 	}
-	put, err := volume.New(volume.Config{
-		BaseURL: baseURL,
-		HTTP:    c.http,
-	}).Put(ctx, assigned.FID, body, volume.PutOptions{
+	volumeClient, err := c.volumeClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	put, err := volumeClient.Put(ctx, assigned.FID, body, volume.PutOptions{
 		ContentType:   opts.ContentType,
 		ContentLength: opts.ContentLength,
 		Filename:      opts.Filename,
@@ -102,10 +120,11 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 	if err != nil {
 		return nil, err
 	}
-	resp, err := volume.New(volume.Config{
-		BaseURL: baseURL,
-		HTTP:    c.http,
-	}).Get(ctx, fileID, volume.GetOptions{Range: opts.Range})
+	volumeClient, err := c.volumeClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := volumeClient.Get(ctx, fileID, volume.GetOptions{Range: opts.Range})
 	if err != nil {
 		if httpx.IsHTTPStatus(err, http.StatusNotFound, http.StatusNotFound) || httpx.IsHTTPStatus(err, http.StatusInternalServerError, 599) {
 			c.forget(volumeID(fileID))
@@ -120,10 +139,11 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	if err != nil {
 		return nil, err
 	}
-	header, err := volume.New(volume.Config{
-		BaseURL: baseURL,
-		HTTP:    c.http,
-	}).Head(ctx, fileID)
+	volumeClient, err := c.volumeClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	header, err := volumeClient.Head(ctx, fileID)
 	if err != nil {
 		if httpx.IsHTTPStatus(err, http.StatusNotFound, http.StatusNotFound) || httpx.IsHTTPStatus(err, http.StatusInternalServerError, 599) {
 			c.forget(volumeID(fileID))
@@ -138,10 +158,11 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 	if err != nil {
 		return err
 	}
-	err = volume.New(volume.Config{
-		BaseURL: baseURL,
-		HTTP:    c.http,
-	}).Delete(ctx, fileID)
+	volumeClient, err := c.volumeClient(baseURL)
+	if err != nil {
+		return err
+	}
+	err = volumeClient.Delete(ctx, fileID)
 	if err != nil {
 		if httpx.IsHTTPStatus(err, http.StatusNotFound, http.StatusNotFound) || httpx.IsHTTPStatus(err, http.StatusInternalServerError, 599) {
 			c.forget(volumeID(fileID))
@@ -149,6 +170,16 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) volumeClient(baseURL string) (*volume.Client, error) {
+	return volume.New(volume.Config{
+		BaseURL:     baseURL,
+		HTTPClient:  c.httpClient,
+		UserAgent:   c.userAgent,
+		BearerToken: c.bearerToken,
+		Retry:       c.retry,
+	})
 }
 
 func (c *Client) location(ctx context.Context, fileID string) (string, error) {

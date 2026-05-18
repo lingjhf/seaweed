@@ -29,8 +29,8 @@ func TestNewNormalizesMasterURL(t *testing.T) {
 	if client.Config().MasterURL != "http://127.0.0.1:9333" {
 		t.Fatalf("MasterURL = %q", client.Config().MasterURL)
 	}
-	if client.Config().TusBasePath != "/.tus" {
-		t.Fatalf("TusBasePath = %q", client.Config().TusBasePath)
+	if client.Config().TUSBasePath != "/.tus" {
+		t.Fatalf("TUSBasePath = %q", client.Config().TUSBasePath)
 	}
 }
 
@@ -42,7 +42,7 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 		MasterURL:       "http://127.0.0.1:9333/master/?q=1#fragment",
 		VolumeURL:       "http://127.0.0.1:8080/volume/",
 		FilerURL:        "http://127.0.0.1:8888/filer/",
-		TusBasePath:     "uploads",
+		TUSBasePath:     "uploads",
 		S3URL:           "http://127.0.0.1:8333/s3/",
 		IAMURL:          "http://127.0.0.1:8333/iam/",
 		AccessKeyID:     "access",

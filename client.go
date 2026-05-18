@@ -14,13 +14,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/lingjhf/seaweed/blob"
 	"github.com/lingjhf/seaweed/filer"
-	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 	"github.com/lingjhf/seaweed/tus"
 	"github.com/lingjhf/seaweed/volume"
 )
 
-const defaultTusBasePath = "/.tus"
+const defaultTUSBasePath = "/.tus"
 
 type Client struct {
 	config Config
@@ -46,8 +45,8 @@ func New(config Config, opts ...Option) (*Client, error) {
 	if config.MasterURL == "" {
 		return nil, fmt.Errorf("seaweed: master url is required")
 	}
-	if config.TusBasePath == "" {
-		config.TusBasePath = defaultTusBasePath
+	if config.TUSBasePath == "" {
+		config.TUSBasePath = defaultTUSBasePath
 	}
 	if config.Retry.MaxAttempts == 0 {
 		config.Retry = DefaultRetryPolicy()
@@ -90,40 +89,68 @@ func New(config Config, opts ...Option) (*Client, error) {
 		config.Region = "us-east-1"
 	}
 
-	transport := httpx.NewClient(httpx.Config{
+	masterClient, err := master.New(master.Config{
+		BaseURL:     config.MasterURL,
 		HTTPClient:  applied.httpClient,
 		UserAgent:   config.UserAgent,
 		BearerToken: config.BearerToken,
 		Retry:       config.Retry,
 	})
-
+	if err != nil {
+		return nil, err
+	}
 	client := &Client{
 		config: config,
 		http:   applied.httpClient,
-		master: master.New(master.Config{
-			BaseURL: config.MasterURL,
-			HTTP:    transport,
-		}),
+		master: masterClient,
 	}
-	client.volume = volume.New(volume.Config{
-		BaseURL: config.VolumeURL,
-		HTTP:    transport,
-	})
-	client.blob = blob.New(blob.Config{
+	if config.VolumeURL != "" {
+		client.volume, err = volume.New(volume.Config{
+			BaseURL:     config.VolumeURL,
+			HTTPClient:  applied.httpClient,
+			UserAgent:   config.UserAgent,
+			BearerToken: config.BearerToken,
+			Retry:       config.Retry,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	client.blob, err = blob.New(blob.Config{
 		Master:        client.master,
-		HTTP:          transport,
+		HTTPClient:    applied.httpClient,
+		UserAgent:     config.UserAgent,
+		BearerToken:   config.BearerToken,
+		Retry:         config.Retry,
 		UsePublicURLs: config.UsePublicURLs,
 	})
-	client.filer = filer.New(filer.Config{
-		BaseURL: config.FilerURL,
-		HTTP:    transport,
-	})
-	client.tus = tus.New(tus.Config{
-		FilerURL:    config.FilerURL,
-		BasePath:    config.TusBasePath,
-		HTTP:        transport,
-		ContentType: "application/offset+octet-stream",
-	})
+	if err != nil {
+		return nil, err
+	}
+	if config.FilerURL != "" {
+		client.filer, err = filer.New(filer.Config{
+			BaseURL:     config.FilerURL,
+			HTTPClient:  applied.httpClient,
+			UserAgent:   config.UserAgent,
+			BearerToken: config.BearerToken,
+			Retry:       config.Retry,
+		})
+		if err != nil {
+			return nil, err
+		}
+		client.tus, err = tus.New(tus.Config{
+			FilerURL:    config.FilerURL,
+			BasePath:    config.TUSBasePath,
+			HTTPClient:  applied.httpClient,
+			UserAgent:   config.UserAgent,
+			BearerToken: config.BearerToken,
+			Retry:       config.Retry,
+			ContentType: "application/offset+octet-stream",
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return client, nil
 }
 

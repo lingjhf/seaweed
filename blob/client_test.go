@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/lingjhf/seaweed/blob"
-	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 )
 
@@ -49,14 +48,20 @@ func TestPutAssignsAndUploads(t *testing.T) {
 	}))
 	defer masterServer.Close()
 
-	httpClient := httpx.NewClient(httpx.Config{HTTPClient: masterServer.Client()})
-	client := blob.New(blob.Config{
-		Master: master.New(master.Config{
-			BaseURL: masterServer.URL,
-			HTTP:    httpClient,
-		}),
-		HTTP: httpClient,
+	masterClient, err := master.New(master.Config{
+		BaseURL:    masterServer.URL,
+		HTTPClient: masterServer.Client(),
 	})
+	if err != nil {
+		t.Fatalf("master.New() error = %v", err)
+	}
+	client, err := blob.New(blob.Config{
+		Master:     masterClient,
+		HTTPClient: masterServer.Client(),
+	})
+	if err != nil {
+		t.Fatalf("blob.New() error = %v", err)
+	}
 
 	resp, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{
 		ContentLength: 5,
@@ -66,6 +71,14 @@ func TestPutAssignsAndUploads(t *testing.T) {
 	}
 	if resp.FileID != "7,abc" {
 		t.Fatalf("FileID = %q, want 7,abc", resp.FileID)
+	}
+}
+
+func TestNewRequiresMasterClient(t *testing.T) {
+	t.Parallel()
+
+	if _, err := blob.New(blob.Config{}); err == nil {
+		t.Fatal("blob.New() error = nil, want master client error")
 	}
 }
 
@@ -108,7 +121,7 @@ func TestPutUsesPublicURLAndAssignOptions(t *testing.T) {
 	}))
 	defer masterServer.Close()
 
-	client := newTestClient(masterServer, true)
+	client := newTestClient(t, masterServer, true)
 	resp, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{
 		Collection:    "photos",
 		DataCenter:    "dc1",
@@ -155,7 +168,7 @@ func TestPutValidatesAssignResponse(t *testing.T) {
 			}))
 			defer masterServer.Close()
 
-			client := newTestClient(masterServer, false)
+			client := newTestClient(t, masterServer, false)
 			if _, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{}); err == nil {
 				t.Fatal("Put() error = nil, want error")
 			}
@@ -209,7 +222,7 @@ func TestGetHeadDeleteLookupCacheAndInvalidate(t *testing.T) {
 	}))
 	defer masterServer.Close()
 
-	client := newTestClient(masterServer, false)
+	client := newTestClient(t, masterServer, false)
 	resp, err := client.Get(context.Background(), "9,abc", blob.GetOptions{Range: "bytes=0-4"})
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
@@ -278,7 +291,7 @@ func TestLookupErrors(t *testing.T) {
 			}))
 			defer masterServer.Close()
 
-			client := newTestClient(masterServer, false)
+			client := newTestClient(t, masterServer, false)
 			if _, err := client.Get(context.Background(), "9,abc", blob.GetOptions{}); err == nil {
 				t.Fatal("Get() error = nil, want error")
 			}
@@ -292,7 +305,7 @@ func TestInvalidFileID(t *testing.T) {
 	masterServer := httptest.NewServer(http.NotFoundHandler())
 	defer masterServer.Close()
 
-	client := newTestClient(masterServer, false)
+	client := newTestClient(t, masterServer, false)
 	if _, err := client.Get(context.Background(), "", blob.GetOptions{}); err == nil {
 		t.Fatal("Get() error = nil, want invalid file id error")
 	}
@@ -304,16 +317,24 @@ func TestInvalidFileID(t *testing.T) {
 	}
 }
 
-func newTestClient(server *httptest.Server, usePublicURLs bool) *blob.Client {
-	httpClient := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
-	return blob.New(blob.Config{
-		Master: master.New(master.Config{
-			BaseURL: server.URL,
-			HTTP:    httpClient,
-		}),
-		HTTP:          httpClient,
+func newTestClient(t *testing.T, server *httptest.Server, usePublicURLs bool) *blob.Client {
+	t.Helper()
+	masterClient, err := master.New(master.Config{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("master.New() error = %v", err)
+	}
+	client, err := blob.New(blob.Config{
+		Master:        masterClient,
+		HTTPClient:    server.Client(),
 		UsePublicURLs: usePublicURLs,
 	})
+	if err != nil {
+		t.Fatalf("blob.New() error = %v", err)
+	}
+	return client
 }
 
 func assertQuery(t *testing.T, got string, want string) {

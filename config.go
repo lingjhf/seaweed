@@ -13,7 +13,7 @@ type Config struct {
 	MasterURL       string
 	VolumeURL       string
 	FilerURL        string
-	TusBasePath     string
+	TUSBasePath     string
 	S3URL           string
 	IAMURL          string
 	Region          string

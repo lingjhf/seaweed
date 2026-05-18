@@ -61,7 +61,7 @@ func TestPutBuildsRequest(t *testing.T) {
 	defer server.Close()
 
 	offset := int64(7)
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	resp, err := client.Put(context.Background(), "/docs/report.txt", strings.NewReader("hello"), filer.PutOptions{
 		DataCenter:         "dc1",
 		Rack:               "rack1",
@@ -117,7 +117,7 @@ func TestAppendBuildsRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	resp, err := client.Append(context.Background(), "/docs/report.txt", strings.NewReader("-tail"), filer.PutOptions{ContentLength: 5})
 	if err != nil {
 		t.Fatalf("Append() error = %v", err)
@@ -158,7 +158,7 @@ func TestListBuildsJSONRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	resp, err := client.List(context.Background(), "/docs", filer.ListOptions{
 		Limit:              2,
 		LastFileName:       "a.txt",
@@ -208,7 +208,7 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	if err := client.Mkdir(context.Background(), "/docs"); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
@@ -278,7 +278,7 @@ func TestCopyMoveAndTaggingRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	if err := client.Copy(context.Background(), "/src.txt", "/dst.txt"); err != nil {
 		t.Fatalf("Copy() error = %v", err)
 	}
@@ -299,29 +299,17 @@ func TestCopyMoveAndTaggingRequests(t *testing.T) {
 func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	t.Parallel()
 
-	clientWithoutBaseURL := filer.New(filer.Config{
-		HTTP: httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient}),
-	})
-	if _, err := clientWithoutBaseURL.Put(context.Background(), "/file.txt", strings.NewReader("x"), filer.PutOptions{}); err == nil {
-		t.Fatal("Put() error = nil, want base url error")
-	}
-	if err := clientWithoutBaseURL.Copy(context.Background(), "/src.txt", "/dst.txt"); err == nil {
-		t.Fatal("Copy() error = nil, want base url error")
-	}
-	if err := clientWithoutBaseURL.Mkdir(context.Background(), "/dir"); err == nil {
-		t.Fatal("Mkdir() error = nil, want base url error")
-	}
-	if _, err := clientWithoutBaseURL.Get(context.Background(), "/file.txt", filer.GetOptions{}); err == nil {
-		t.Fatal("Get() error = nil, want base url error")
-	}
-	if _, err := clientWithoutBaseURL.List(context.Background(), "/dir", filer.ListOptions{}); err == nil {
-		t.Fatal("List() error = nil, want base url error")
+	if _, err := filer.New(filer.Config{}); err == nil {
+		t.Fatal("filer.New() error = nil, want base url error")
 	}
 
-	clientWithBaseURL := filer.New(filer.Config{
-		BaseURL: "http://example.test",
-		HTTP:    httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient}),
+	clientWithBaseURL, err := filer.New(filer.Config{
+		BaseURL:    "http://example.test",
+		HTTPClient: http.DefaultClient,
 	})
+	if err != nil {
+		t.Fatalf("filer.New() error = %v", err)
+	}
 	if _, err := clientWithBaseURL.Get(context.Background(), "", filer.GetOptions{}); err == nil {
 		t.Fatal("Get() error = nil, want path error")
 	}
@@ -334,7 +322,7 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	resp, err := client.Get(context.Background(), "/missing.txt", filer.GetOptions{})
 	if err == nil {
 		if resp != nil {
@@ -355,11 +343,16 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	}
 }
 
-func newTestClient(server *httptest.Server) *filer.Client {
-	return filer.New(filer.Config{
-		BaseURL: server.URL,
-		HTTP:    httpx.NewClient(httpx.Config{HTTPClient: server.Client()}),
+func newTestClient(t *testing.T, server *httptest.Server) *filer.Client {
+	t.Helper()
+	client, err := filer.New(filer.Config{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
 	})
+	if err != nil {
+		t.Fatalf("filer.New() error = %v", err)
+	}
+	return client
 }
 
 func assertQuery(t *testing.T, got string, want string) {

@@ -11,9 +11,14 @@ import (
 )
 
 type Config struct {
-	BaseURL string
-	HTTP    *httpx.Client
+	BaseURL     string
+	HTTPClient  *http.Client
+	UserAgent   string
+	BearerToken string
+	Retry       RetryPolicy
 }
+
+type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
 	baseURL string
@@ -39,11 +44,22 @@ type GetOptions struct {
 	Range string
 }
 
-func New(config Config) *Client {
+func New(config Config) (*Client, error) {
+	if config.BaseURL == "" {
+		return nil, fmt.Errorf("volume: base url is required")
+	}
+	if config.HTTPClient == nil {
+		config.HTTPClient = http.DefaultClient
+	}
 	return &Client{
 		baseURL: config.BaseURL,
-		http:    config.HTTP,
-	}
+		http: httpx.NewClient(httpx.Config{
+			HTTPClient:  config.HTTPClient,
+			UserAgent:   config.UserAgent,
+			BearerToken: config.BearerToken,
+			Retry:       config.Retry,
+		}),
+	}, nil
 }
 
 func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts PutOptions) (*PutResponse, error) {

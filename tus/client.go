@@ -18,9 +18,14 @@ const Version = "1.0.0"
 type Config struct {
 	FilerURL    string
 	BasePath    string
-	HTTP        *httpx.Client
+	HTTPClient  *http.Client
+	UserAgent   string
+	BearerToken string
+	Retry       RetryPolicy
 	ContentType string
 }
+
+type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
 	filerURL    string
@@ -62,7 +67,13 @@ type ResumeOptions struct {
 	ChunkSize int64
 }
 
-func New(config Config) *Client {
+func New(config Config) (*Client, error) {
+	if config.FilerURL == "" {
+		return nil, fmt.Errorf("tus: filer url is required")
+	}
+	if config.HTTPClient == nil {
+		config.HTTPClient = http.DefaultClient
+	}
 	basePath := strings.TrimRight(config.BasePath, "/")
 	if basePath == "" {
 		basePath = "/.tus"
@@ -75,11 +86,16 @@ func New(config Config) *Client {
 		contentType = "application/offset+octet-stream"
 	}
 	return &Client{
-		filerURL:    strings.TrimRight(config.FilerURL, "/"),
-		basePath:    basePath,
-		http:        config.HTTP,
+		filerURL: strings.TrimRight(config.FilerURL, "/"),
+		basePath: basePath,
+		http: httpx.NewClient(httpx.Config{
+			HTTPClient:  config.HTTPClient,
+			UserAgent:   config.UserAgent,
+			BearerToken: config.BearerToken,
+			Retry:       config.Retry,
+		}),
 		contentType: contentType,
-	}
+	}, nil
 }
 
 func (c *Client) Options(ctx context.Context) (*Options, error) {

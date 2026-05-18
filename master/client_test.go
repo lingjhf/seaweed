@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 )
 
@@ -32,12 +31,7 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := master.New(master.Config{
-		BaseURL: server.URL,
-		HTTP: httpx.NewClient(httpx.Config{
-			HTTPClient: server.Client(),
-		}),
-	})
+	client := newTestClient(t, server)
 
 	resp, err := client.Assign(context.Background(), master.AssignOptions{
 		Count:       2,
@@ -50,6 +44,14 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 	}
 	if resp.FID != "3,abc" {
 		t.Fatalf("FID = %q, want 3,abc", resp.FID)
+	}
+}
+
+func TestNewRequiresBaseURL(t *testing.T) {
+	t.Parallel()
+
+	if _, err := master.New(master.Config{}); err == nil {
+		t.Fatal("master.New() error = nil, want base url error")
 	}
 }
 
@@ -74,12 +76,7 @@ func TestClientLookupBuildsRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := master.New(master.Config{
-		BaseURL: server.URL,
-		HTTP: httpx.NewClient(httpx.Config{
-			HTTPClient: server.Client(),
-		}),
-	})
+	client := newTestClient(t, server)
 
 	resp, err := client.Lookup(context.Background(), "3", master.LookupOptions{
 		Collection: "photos",
@@ -133,7 +130,7 @@ func TestClientVolumeManagementRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	if err := client.Vacuum(context.Background(), 0.35); err != nil {
 		t.Fatalf("Vacuum() error = %v", err)
 	}
@@ -199,7 +196,7 @@ func TestClientStatusRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	cluster, err := client.ClusterStatus(context.Background())
 	if err != nil {
 		t.Fatalf("ClusterStatus() error = %v", err)
@@ -226,13 +223,16 @@ func TestClientStatusRequests(t *testing.T) {
 	}
 }
 
-func newTestClient(server *httptest.Server) *master.Client {
-	return master.New(master.Config{
-		BaseURL: server.URL,
-		HTTP: httpx.NewClient(httpx.Config{
-			HTTPClient: server.Client(),
-		}),
+func newTestClient(t *testing.T, server *httptest.Server) *master.Client {
+	t.Helper()
+	client, err := master.New(master.Config{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
 	})
+	if err != nil {
+		t.Fatalf("master.New() error = %v", err)
+	}
+	return client
 }
 
 func assertQuery(t *testing.T, got string, want string) {

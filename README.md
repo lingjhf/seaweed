@@ -19,6 +19,7 @@ This project is in the `0.x` development line. Public APIs can change between mi
 client, err := seaweed.New(seaweed.Config{
     MasterURL: "http://127.0.0.1:9333",
     FilerURL:  "http://127.0.0.1:8888",
+    TUSBasePath: "/.tus",
     S3URL:     "http://127.0.0.1:8333",
 
     AccessKeyID:     "seaweed_admin",
@@ -31,6 +32,8 @@ if err != nil {
 ```
 
 See `examples/basic` and `examples/s3`.
+
+Direct package clients such as `master.New`, `volume.New`, `filer.New`, and `tus.New` return `(*Client, error)` and accept standard `*http.Client` configuration. They do not expose SDK internal transport types.
 
 ## Validation
 

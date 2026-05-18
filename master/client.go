@@ -2,6 +2,7 @@ package master
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -9,20 +10,36 @@ import (
 )
 
 type Config struct {
-	BaseURL string
-	HTTP    *httpx.Client
+	BaseURL     string
+	HTTPClient  *http.Client
+	UserAgent   string
+	BearerToken string
+	Retry       RetryPolicy
 }
+
+type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
 	baseURL string
 	http    *httpx.Client
 }
 
-func New(config Config) *Client {
+func New(config Config) (*Client, error) {
+	if config.BaseURL == "" {
+		return nil, fmt.Errorf("master: base url is required")
+	}
+	if config.HTTPClient == nil {
+		config.HTTPClient = http.DefaultClient
+	}
 	return &Client{
 		baseURL: config.BaseURL,
-		http:    config.HTTP,
-	}
+		http: httpx.NewClient(httpx.Config{
+			HTTPClient:  config.HTTPClient,
+			UserAgent:   config.UserAgent,
+			BearerToken: config.BearerToken,
+			Retry:       config.Retry,
+		}),
+	}, nil
 }
 
 type AssignOptions struct {

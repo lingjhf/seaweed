@@ -42,12 +42,7 @@ func TestPutSendsRawBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := volume.New(volume.Config{
-		BaseURL: server.URL,
-		HTTP: httpx.NewClient(httpx.Config{
-			HTTPClient: server.Client(),
-		}),
-	})
+	client := newTestClient(t, server)
 	resp, err := client.Put(context.Background(), "3,abc", stringsReader("hello"), volume.PutOptions{
 		ContentType:   "text/plain",
 		ContentLength: 5,
@@ -80,7 +75,7 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	_, err := client.Put(context.Background(), "/3,abc", stringsReader("hello"), volume.PutOptions{
 		ContentEncoding: "gzip",
 		ContentMD5:      "md5",
@@ -103,12 +98,7 @@ func TestGetReturnsStream(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := volume.New(volume.Config{
-		BaseURL: server.URL,
-		HTTP: httpx.NewClient(httpx.Config{
-			HTTPClient: server.Client(),
-		}),
-	})
+	client := newTestClient(t, server)
 	resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
@@ -134,7 +124,7 @@ func TestGetSendsRange(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{Range: "bytes=1-3"})
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
@@ -169,7 +159,7 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	header, err := client.Head(context.Background(), "3,abc")
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
@@ -200,7 +190,7 @@ func TestHTTPErrorResponses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{})
 	if err == nil {
 		if resp != nil {
@@ -224,23 +214,17 @@ func TestHTTPErrorResponses(t *testing.T) {
 func TestBaseURLAndFileIDValidation(t *testing.T) {
 	t.Parallel()
 
-	clientWithoutBaseURL := volume.New(volume.Config{
-		HTTP: httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient}),
-	})
-	if _, err := clientWithoutBaseURL.Put(context.Background(), "3,abc", stringsReader("hello"), volume.PutOptions{}); err == nil {
-		t.Fatal("Put() error = nil, want base url error")
-	}
-	if _, err := clientWithoutBaseURL.Status(context.Background()); err == nil {
-		t.Fatal("Status() error = nil, want base url error")
-	}
-	if err := clientWithoutBaseURL.Health(context.Background()); err == nil {
-		t.Fatal("Health() error = nil, want base url error")
+	if _, err := volume.New(volume.Config{}); err == nil {
+		t.Fatal("volume.New() error = nil, want base url error")
 	}
 
-	clientWithBaseURL := volume.New(volume.Config{
-		BaseURL: "http://example.test",
-		HTTP:    httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient}),
+	clientWithBaseURL, err := volume.New(volume.Config{
+		BaseURL:    "http://example.test",
+		HTTPClient: http.DefaultClient,
 	})
+	if err != nil {
+		t.Fatalf("volume.New() error = %v", err)
+	}
 	if _, err := clientWithBaseURL.Get(context.Background(), "", volume.GetOptions{}); err == nil {
 		t.Fatal("Get() error = nil, want file id error")
 	}
@@ -256,13 +240,16 @@ func stringsReader(s string) io.Reader {
 	return strings.NewReader(s)
 }
 
-func newTestClient(server *httptest.Server) *volume.Client {
-	return volume.New(volume.Config{
-		BaseURL: server.URL,
-		HTTP: httpx.NewClient(httpx.Config{
-			HTTPClient: server.Client(),
-		}),
+func newTestClient(t *testing.T, server *httptest.Server) *volume.Client {
+	t.Helper()
+	client, err := volume.New(volume.Config{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
 	})
+	if err != nil {
+		t.Fatalf("volume.New() error = %v", err)
+	}
+	return client
 }
 
 func assertHTTPStatus(t *testing.T, err error, want int) {

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/tus"
 )
 
@@ -36,11 +35,7 @@ func TestCreateEncodesHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := tus.New(tus.Config{
-		FilerURL: server.URL,
-		BasePath: "/.tus",
-		HTTP:     httpx.NewClient(httpx.Config{HTTPClient: server.Client()}),
-	})
+	client := newTestClient(t, server)
 	upload, err := client.Create(context.Background(), "/videos/file.mp4", tus.CreateOptions{
 		Size: 10,
 		Metadata: map[string]string{
@@ -73,7 +68,7 @@ func TestOptionsReturnsServerCapabilities(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	options, err := client.Options(context.Background())
 	if err != nil {
 		t.Fatalf("Options() error = %v", err)
@@ -115,12 +110,15 @@ func TestCreateWithUploadSendsBodyAndHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := tus.New(tus.Config{
+	client, err := tus.New(tus.Config{
 		FilerURL:    server.URL,
 		BasePath:    "uploads",
-		HTTP:        httpx.NewClient(httpx.Config{HTTPClient: server.Client()}),
+		HTTPClient:  server.Client(),
 		ContentType: "application/custom",
 	})
+	if err != nil {
+		t.Fatalf("tus.New() error = %v", err)
+	}
 	upload, err := client.CreateWithUpload(context.Background(), "folder/a b.txt", strings.NewReader("hello"), tus.CreateOptions{
 		Size: 5,
 		Metadata: map[string]string{
@@ -171,7 +169,7 @@ func TestHeadPatchAndTerminate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	status, err := client.Head(context.Background(), "/.tus/.uploads/abc")
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
@@ -221,7 +219,7 @@ func TestUploadChunksBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(server)
+	client := newTestClient(t, server)
 	upload, err := client.Upload(context.Background(), "/chunked.txt", strings.NewReader("hello"), tus.UploadOptions{
 		Size:      5,
 		ChunkSize: 3,
@@ -270,11 +268,7 @@ func TestResumeSeeksToOffset(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := tus.New(tus.Config{
-		FilerURL: server.URL,
-		BasePath: "/.tus",
-		HTTP:     httpx.NewClient(httpx.Config{HTTPClient: server.Client()}),
-	})
+	client := newTestClient(t, server)
 	status, err := client.Resume(context.Background(), server.URL+"/.tus/.uploads/abc", strings.NewReader("helloworld"), tus.ResumeOptions{})
 	if err != nil {
 		t.Fatalf("Resume() error = %v", err)
@@ -290,9 +284,15 @@ func TestResumeSeeksToOffset(t *testing.T) {
 func TestValidationAndResponseErrors(t *testing.T) {
 	t.Parallel()
 
-	client := tus.New(tus.Config{HTTP: httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient})})
-	if _, err := client.Options(context.Background()); err == nil {
-		t.Fatal("Options() error = nil, want missing filer url error")
+	if _, err := tus.New(tus.Config{}); err == nil {
+		t.Fatal("tus.New() error = nil, want missing filer url error")
+	}
+	client, err := tus.New(tus.Config{
+		FilerURL:   "http://example.test",
+		HTTPClient: http.DefaultClient,
+	})
+	if err != nil {
+		t.Fatalf("tus.New() error = %v", err)
 	}
 	if _, err := client.Upload(context.Background(), "/file", strings.NewReader(""), tus.UploadOptions{Size: -1}); err == nil {
 		t.Fatal("Upload() error = nil, want size error")
@@ -315,7 +315,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(server)
+		client := newTestClient(t, server)
 		if _, err := client.Options(context.Background()); err == nil {
 			t.Fatal("Options() error = nil, want invalid max size error")
 		}
@@ -327,7 +327,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(server)
+		client := newTestClient(t, server)
 		if _, err := client.Create(context.Background(), "/file", tus.CreateOptions{Size: 1}); err == nil {
 			t.Fatal("Create() error = nil, want missing location error")
 		}
@@ -341,7 +341,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(server)
+		client := newTestClient(t, server)
 		if _, err := client.Create(context.Background(), "/file", tus.CreateOptions{Size: 1}); err == nil {
 			t.Fatal("Create() error = nil, want invalid offset error")
 		}
@@ -353,7 +353,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(server)
+		client := newTestClient(t, server)
 		if _, err := client.CreateWithUpload(context.Background(), "/file", strings.NewReader("x"), tus.CreateOptions{Size: 1}); err == nil {
 			t.Fatal("CreateWithUpload() error = nil, want status error")
 		}
@@ -366,17 +366,22 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(server)
+		client := newTestClient(t, server)
 		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc"); err == nil {
 			t.Fatal("Head() error = nil, want missing length error")
 		}
 	})
 }
 
-func newTestClient(server *httptest.Server) *tus.Client {
-	return tus.New(tus.Config{
-		FilerURL: server.URL,
-		BasePath: "/.tus",
-		HTTP:     httpx.NewClient(httpx.Config{HTTPClient: server.Client()}),
+func newTestClient(t *testing.T, server *httptest.Server) *tus.Client {
+	t.Helper()
+	client, err := tus.New(tus.Config{
+		FilerURL:   server.URL,
+		BasePath:   "/.tus",
+		HTTPClient: server.Client(),
 	})
+	if err != nil {
+		t.Fatalf("tus.New() error = %v", err)
+	}
+	return client
 }
