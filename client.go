@@ -34,7 +34,7 @@ type Client struct {
 
 func New(config Config, opts ...Option) (*Client, error) {
 	applied := options{
-		httpClient: http.DefaultClient,
+		httpClient: NewHTTPClient(DefaultHTTPClientConfig()),
 	}
 	for _, opt := range opts {
 		opt(&applied)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/lingjhf/seaweed"
 )
@@ -31,6 +32,63 @@ func TestNewNormalizesMasterURL(t *testing.T) {
 	}
 	if client.Config().TUSBasePath != "/.tus" {
 		t.Fatalf("TUSBasePath = %q", client.Config().TUSBasePath)
+	}
+}
+
+func TestNewHTTPClientUsesTunedTransport(t *testing.T) {
+	t.Parallel()
+
+	client := seaweed.NewHTTPClient(seaweed.DefaultHTTPClientConfig())
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.MaxIdleConns != 256 {
+		t.Fatalf("MaxIdleConns = %d, want 256", transport.MaxIdleConns)
+	}
+	if transport.MaxIdleConnsPerHost != 128 {
+		t.Fatalf("MaxIdleConnsPerHost = %d, want 128", transport.MaxIdleConnsPerHost)
+	}
+	if transport.IdleConnTimeout != 90*time.Second {
+		t.Fatalf("IdleConnTimeout = %s, want 90s", transport.IdleConnTimeout)
+	}
+	if !transport.ForceAttemptHTTP2 {
+		t.Fatal("ForceAttemptHTTP2 = false, want true")
+	}
+}
+
+func TestNewHTTPClientUsesOverrides(t *testing.T) {
+	t.Parallel()
+
+	client := seaweed.NewHTTPClient(seaweed.HTTPClientConfig{
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   8,
+		IdleConnTimeout:       11 * time.Second,
+		DialTimeout:           12 * time.Second,
+		KeepAlive:             13 * time.Second,
+		TLSHandshakeTimeout:   14 * time.Second,
+		ExpectContinueTimeout: 15 * time.Second,
+		ResponseHeaderTimeout: 16 * time.Second,
+		Timeout:               17 * time.Second,
+	})
+	transport := client.Transport.(*http.Transport)
+	if transport.MaxIdleConns != 10 || transport.MaxIdleConnsPerHost != 8 {
+		t.Fatalf("idle conn settings = %d/%d, want 10/8", transport.MaxIdleConns, transport.MaxIdleConnsPerHost)
+	}
+	if transport.IdleConnTimeout != 11*time.Second {
+		t.Fatalf("IdleConnTimeout = %s, want 11s", transport.IdleConnTimeout)
+	}
+	if transport.TLSHandshakeTimeout != 14*time.Second {
+		t.Fatalf("TLSHandshakeTimeout = %s, want 14s", transport.TLSHandshakeTimeout)
+	}
+	if transport.ExpectContinueTimeout != 15*time.Second {
+		t.Fatalf("ExpectContinueTimeout = %s, want 15s", transport.ExpectContinueTimeout)
+	}
+	if transport.ResponseHeaderTimeout != 16*time.Second {
+		t.Fatalf("ResponseHeaderTimeout = %s, want 16s", transport.ResponseHeaderTimeout)
+	}
+	if client.Timeout != 17*time.Second {
+		t.Fatalf("Timeout = %s, want 17s", client.Timeout)
 	}
 }
 

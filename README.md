@@ -35,6 +35,8 @@ See `examples/basic` and `examples/s3`.
 
 Direct package clients such as `master.New`, `volume.New`, `filer.New`, and `tus.New` return `(*Client, error)` and accept standard `*http.Client` configuration. They do not expose SDK internal transport types.
 
+By default, `seaweed.New` uses an SDK HTTP client with a larger idle connection pool than Go's default transport. Use `seaweed.NewHTTPClient` when passing the same tuned client to direct package constructors.
+
 ## Validation
 
 The full local gate used before every commit is:
