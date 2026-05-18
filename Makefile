@@ -1,4 +1,4 @@
-.PHONY: test test-race vet integration coverage check check-full
+.PHONY: test test-race vet integration coverage bench check check-full
 
 WEED_BINARY ?= ./weed
 COVER_MIN ?= 85.0
@@ -17,6 +17,9 @@ integration:
 
 coverage:
 	WEED_BINARY=$(WEED_BINARY) COVER_MIN=$(COVER_MIN) ./scripts/coverage.sh
+
+bench:
+	go test -run '^$$' -bench=. -benchmem ./...
 
 check: test test-race vet integration
 
