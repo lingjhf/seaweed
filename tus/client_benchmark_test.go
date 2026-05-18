@@ -90,3 +90,38 @@ func BenchmarkUploadChunks(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkUploadCreationWithUpload(b *testing.B) {
+	body := strings.Repeat("a", 128*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Location", "/.tus/.uploads/bench")
+			w.Header().Set("Upload-Offset", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		FilerURL:   server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		upload, err := client.Upload(context.Background(), "/bench.bin", strings.NewReader(body), UploadOptions{Size: int64(len(body))})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if upload.Offset != int64(len(body)) {
+			b.Fatalf("offset = %d, want %d", upload.Offset, len(body))
+		}
+	}
+}

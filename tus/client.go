@@ -278,6 +278,12 @@ func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, 
 	if opts.Size < 0 {
 		return nil, fmt.Errorf("tus: size must be non-negative")
 	}
+	if opts.ChunkSize <= 0 {
+		return c.CreateWithUpload(ctx, targetPath, body, CreateOptions{
+			Size:     opts.Size,
+			Metadata: opts.Metadata,
+		})
+	}
 	upload, err := c.Create(ctx, targetPath, CreateOptions{
 		Size:     opts.Size,
 		Metadata: opts.Metadata,

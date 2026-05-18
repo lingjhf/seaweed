@@ -241,6 +241,51 @@ func TestUploadChunksBody(t *testing.T) {
 	}
 }
 
+func TestUploadUsesCreationWithUploadWhenUnchunked(t *testing.T) {
+	t.Parallel()
+
+	patchCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			if r.Header.Get("Content-Type") != "application/offset+octet-stream" {
+				t.Fatalf("Content-Type = %q", r.Header.Get("Content-Type"))
+			}
+			if r.Header.Get("Upload-Length") != "5" {
+				t.Fatalf("Upload-Length = %q, want 5", r.Header.Get("Upload-Length"))
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if string(body) != "hello" {
+				t.Fatalf("body = %q, want hello", body)
+			}
+			w.Header().Set("Location", "/.tus/.uploads/one-shot")
+			w.Header().Set("Upload-Offset", "5")
+			w.WriteHeader(http.StatusCreated)
+		case http.MethodPatch:
+			patchCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	upload, err := client.Upload(context.Background(), "/one-shot.txt", strings.NewReader("hello"), tus.UploadOptions{Size: 5})
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	if upload.Offset != 5 || upload.Size != 5 {
+		t.Fatalf("Upload() = %+v, want offset 5 size 5", upload)
+	}
+	if patchCalled {
+		t.Fatal("Upload() issued PATCH for unchunked upload")
+	}
+}
+
 func TestResumeSeeksToOffset(t *testing.T) {
 	t.Parallel()
 
