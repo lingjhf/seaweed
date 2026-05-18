@@ -181,7 +181,41 @@ func TestClientStatusRequests(t *testing.T) {
 				t.Fatalf("dir status method = %s, want GET", r.Method)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"Topology": "ok",
+				"Version": "test",
+				"Topology": map[string]any{
+					"Free": 3,
+					"Max":  7,
+					"DataCenters": []map[string]any{
+						{
+							"Id":   "dc1",
+							"Free": 3,
+							"Max":  7,
+							"Racks": []map[string]any{
+								{
+									"Id":   "rack1",
+									"Free": 3,
+									"Max":  7,
+									"DataNodes": []map[string]any{
+										{
+											"Url":       "127.0.0.1:8080",
+											"PublicUrl": "localhost:8080",
+											"Free":      3,
+											"Max":       7,
+											"Volumes":   4,
+										},
+									},
+								},
+							},
+						},
+					},
+					"layouts": []map[string]any{
+						{
+							"collection":  "photos",
+							"replication": "001",
+							"writables":   []int{1, 2},
+						},
+					},
+				},
 			})
 		case "/vol/status":
 			if r.Method != http.MethodGet {
@@ -211,8 +245,33 @@ func TestClientStatusRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DirStatus() error = %v", err)
 	}
-	if dirStatus["Topology"] != "ok" {
-		t.Fatalf("DirStatus()[Topology] = %v, want ok", dirStatus["Topology"])
+	if dirStatus.Version != "test" {
+		t.Fatalf("DirStatus().Version = %q, want test", dirStatus.Version)
+	}
+	if dirStatus.Topology.Free != 3 || dirStatus.Topology.Max != 7 {
+		t.Fatalf("DirStatus().Topology capacity = %d/%d, want 3/7", dirStatus.Topology.Free, dirStatus.Topology.Max)
+	}
+	if len(dirStatus.Topology.DataCenters) != 1 {
+		t.Fatalf("DirStatus().Topology.DataCenters len = %d, want 1", len(dirStatus.Topology.DataCenters))
+	}
+	dataCenter := dirStatus.Topology.DataCenters[0]
+	if dataCenter.ID != "dc1" || len(dataCenter.Racks) != 1 {
+		t.Fatalf("DirStatus().Topology.DataCenters[0] = %+v, want dc1 with one rack", dataCenter)
+	}
+	rack := dataCenter.Racks[0]
+	if rack.ID != "rack1" || len(rack.DataNodes) != 1 {
+		t.Fatalf("DirStatus().Topology.DataCenters[0].Racks[0] = %+v, want rack1 with one data node", rack)
+	}
+	node := rack.DataNodes[0]
+	if node.URL != "127.0.0.1:8080" || node.PublicURL != "localhost:8080" || node.Volumes != 4 {
+		t.Fatalf("DirStatus() data node = %+v, want decoded node", node)
+	}
+	if len(dirStatus.Topology.Layouts) != 1 {
+		t.Fatalf("DirStatus().Topology.Layouts len = %d, want 1", len(dirStatus.Topology.Layouts))
+	}
+	layout := dirStatus.Topology.Layouts[0]
+	if layout.Collection != "photos" || layout.Replication != "001" || len(layout.Writables) != 2 || layout.Writables[0] != 1 || layout.Writables[1] != 2 {
+		t.Fatalf("DirStatus().Topology.Layouts[0] = %+v, want decoded layout", layout)
 	}
 	volumeStatus, err := client.VolumeStatus(context.Background())
 	if err != nil {

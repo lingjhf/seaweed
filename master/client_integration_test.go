@@ -37,6 +37,17 @@ func TestMasterAssignLookupIntegration(t *testing.T) {
 		t.Fatal("Assign().FID is empty")
 	}
 
+	dirStatus, err := client.Master().DirStatus(ctx)
+	if err != nil {
+		t.Fatalf("DirStatus() error = %v", err)
+	}
+	if len(dirStatus.Topology.DataCenters) == 0 {
+		t.Fatal("DirStatus().Topology.DataCenters is empty")
+	}
+	if len(dirStatus.Topology.DataCenters[0].Racks) == 0 {
+		t.Fatal("DirStatus().Topology.DataCenters[0].Racks is empty")
+	}
+
 	volumeID := strings.Split(assigned.FID, ",")[0]
 	lookup, err := client.Master().Lookup(ctx, volumeID, master.LookupOptions{})
 	if err != nil {

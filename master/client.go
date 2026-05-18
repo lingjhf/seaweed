@@ -128,6 +128,52 @@ type ClusterStatus struct {
 	Peers    []string `json:"Peers"`
 }
 
+// DirStatusResponse describes writable volume status returned by /dir/status.
+type DirStatusResponse struct {
+	Topology Topology `json:"Topology"`
+	Version  string   `json:"Version"`
+}
+
+// Topology describes master writable-volume topology.
+type Topology struct {
+	DataCenters []DataCenter           `json:"DataCenters"`
+	Free        int                    `json:"Free"`
+	Max         int                    `json:"Max"`
+	Layouts     []WritableVolumeLayout `json:"layouts"`
+}
+
+// DataCenter describes one SeaweedFS data center in master topology.
+type DataCenter struct {
+	ID    string `json:"Id"`
+	Free  int    `json:"Free"`
+	Max   int    `json:"Max"`
+	Racks []Rack `json:"Racks"`
+}
+
+// Rack describes one rack in master topology.
+type Rack struct {
+	ID        string     `json:"Id"`
+	Free      int        `json:"Free"`
+	Max       int        `json:"Max"`
+	DataNodes []DataNode `json:"DataNodes"`
+}
+
+// DataNode describes one volume server in master topology.
+type DataNode struct {
+	URL       string `json:"Url"`
+	PublicURL string `json:"PublicUrl"`
+	Free      int    `json:"Free"`
+	Max       int    `json:"Max"`
+	Volumes   int    `json:"Volumes"`
+}
+
+// WritableVolumeLayout describes writable volume IDs for one collection layout.
+type WritableVolumeLayout struct {
+	Collection  string `json:"collection"`
+	Replication string `json:"replication"`
+	Writables   []int  `json:"writables"`
+}
+
 // Assign asks the master to allocate one or more file IDs.
 func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignResponse, error) {
 	query := url.Values{}
@@ -227,13 +273,13 @@ func (c *Client) Health(ctx context.Context) error {
 	}, http.StatusOK)
 }
 
-// DirStatus returns raw directory status data from the master.
-func (c *Client) DirStatus(ctx context.Context) (map[string]any, error) {
-	out := map[string]any{}
+// DirStatus returns writable volume topology from the master.
+func (c *Client) DirStatus(ctx context.Context) (*DirStatusResponse, error) {
+	var out DirStatusResponse
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/status", httpx.Request{
 		Method: http.MethodGet,
 	}, &out)
-	return out, err
+	return &out, err
 }
 
 // VolumeStatus returns raw volume status data from the master.

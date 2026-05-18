@@ -331,6 +331,12 @@ if err != nil {
     return err
 }
 fmt.Println(assigned.FID)
+
+dirStatus, err := masterClient.DirStatus(ctx)
+if err != nil {
+    return err
+}
+fmt.Println(dirStatus.Topology.Free, dirStatus.Topology.Max)
 ```
 
 ## Validation
