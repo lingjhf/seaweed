@@ -20,7 +20,7 @@ func main() {
 		panic(err)
 	}
 
-	_, err = client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader("hello seaweedfs"), filer.PutOptions{
+	_, err = client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader("hello seaweedfs"), filer.WriteOptions{
 		ContentType:   "text/plain",
 		ContentLength: int64(len("hello seaweedfs")),
 	})

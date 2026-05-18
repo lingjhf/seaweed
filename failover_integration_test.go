@@ -31,8 +31,8 @@ func TestNativeEndpointFailoverIntegration(t *testing.T) {
 	if err := client.Master().Health(ctx); err != nil {
 		t.Fatalf("Master().Health() error = %v", err)
 	}
-	if _, err := client.Filer().List(ctx, "/", filer.ListOptions{Limit: 1}); err != nil {
-		t.Fatalf("Filer().List() error = %v", err)
+	if _, err := client.Filer().ListPage(ctx, "/", filer.ListOptions{Limit: 1}); err != nil {
+		t.Fatalf("Filer().ListPage() error = %v", err)
 	}
 }
 
@@ -68,8 +68,8 @@ func TestNativeEndpointPolicyIntegration(t *testing.T) {
 	if err := client.Master().Health(ctx); err != nil {
 		t.Fatalf("Master().Health() error = %v", err)
 	}
-	if _, err := client.Filer().List(ctx, "/", filer.ListOptions{Limit: 1}); err != nil {
-		t.Fatalf("Filer().List() error = %v", err)
+	if _, err := client.Filer().ListPage(ctx, "/", filer.ListOptions{Limit: 1}); err != nil {
+		t.Fatalf("Filer().ListPage() error = %v", err)
 	}
 }
 

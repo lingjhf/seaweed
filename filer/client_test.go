@@ -62,7 +62,7 @@ func TestPutBuildsRequest(t *testing.T) {
 
 	offset := int64(7)
 	client := newTestClient(t, server)
-	resp, err := client.Put(context.Background(), "/docs/report.txt", strings.NewReader("hello"), filer.PutOptions{
+	resp, err := client.Put(context.Background(), "/docs/report.txt", strings.NewReader("hello"), filer.WriteOptions{
 		DataCenter:         "dc1",
 		Rack:               "rack1",
 		DataNode:           "node1",
@@ -118,17 +118,12 @@ func TestAppendBuildsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	resp, err := client.Append(context.Background(), "/docs/report.txt", strings.NewReader("-tail"), filer.PutOptions{ContentLength: 5})
+	resp, err := client.Append(context.Background(), "/docs/report.txt", strings.NewReader("-tail"), filer.AppendOptions{ContentLength: 5})
 	if err != nil {
 		t.Fatalf("Append() error = %v", err)
 	}
 	if resp.Size != 10 {
 		t.Fatalf("Size = %d, want 10", resp.Size)
-	}
-
-	offset := int64(5)
-	if _, err := client.Append(context.Background(), "/docs/report.txt", strings.NewReader("-tail"), filer.PutOptions{Offset: &offset}); err == nil {
-		t.Fatal("Append() with offset error = nil, want error")
 	}
 }
 
@@ -159,7 +154,7 @@ func TestListBuildsJSONRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	resp, err := client.List(context.Background(), "/docs", filer.ListOptions{
+	resp, err := client.ListPage(context.Background(), "/docs", filer.ListOptions{
 		Limit:              2,
 		LastFileName:       "a.txt",
 		NamePattern:        "*.txt",
@@ -227,12 +222,15 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	if string(body) != "hello" {
 		t.Fatalf("body = %q, want hello", body)
 	}
-	header, err := client.Head(context.Background(), "/docs/report.txt")
+	head, err := client.Head(context.Background(), "/docs/report.txt")
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
-	if header.Get("Seaweed-Owner") != "sdk" {
-		t.Fatalf("Seaweed-Owner = %q, want sdk", header.Get("Seaweed-Owner"))
+	if head.Header.Get("Seaweed-Owner") != "sdk" {
+		t.Fatalf("Seaweed-Owner = %q, want sdk", head.Header.Get("Seaweed-Owner"))
+	}
+	if head.Tags["Owner"] != "sdk" {
+		t.Fatalf("Tags[Owner] = %q, want sdk", head.Tags["Owner"])
 	}
 	entry, err := client.Stat(context.Background(), "/docs/report.txt", filer.StatOptions{ResolveManifest: true})
 	if err != nil {
@@ -313,7 +311,7 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	if _, err := clientWithBaseURL.Get(context.Background(), "", filer.GetOptions{}); err == nil {
 		t.Fatal("Get() error = nil, want path error")
 	}
-	if _, err := clientWithBaseURL.List(context.Background(), "", filer.ListOptions{}); err == nil {
+	if _, err := clientWithBaseURL.ListPage(context.Background(), "", filer.ListOptions{}); err == nil {
 		t.Fatal("List() error = nil, want path error")
 	}
 

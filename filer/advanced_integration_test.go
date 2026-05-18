@@ -27,14 +27,14 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	_, err = client.Filer().Put(ctx, "/advanced/source.txt", strings.NewReader("hello"), filer.PutOptions{
+	_, err = client.Filer().Put(ctx, "/advanced/source.txt", strings.NewReader("hello"), filer.WriteOptions{
 		ContentType:   "text/plain",
 		ContentLength: int64(len("hello")),
 	})
 	if err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
-	_, err = client.Filer().Append(ctx, "/advanced/source.txt", strings.NewReader("-world"), filer.PutOptions{
+	_, err = client.Filer().Append(ctx, "/advanced/source.txt", strings.NewReader("-world"), filer.AppendOptions{
 		ContentType:   "text/plain",
 		ContentLength: int64(len("-world")),
 	})
@@ -56,22 +56,22 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 	if err := client.Filer().SetTags(ctx, "/advanced/moved.txt", map[string]string{"Project": "sdk"}); err != nil {
 		t.Fatalf("SetTags() error = %v", err)
 	}
-	header, err := client.Filer().Head(ctx, "/advanced/moved.txt")
+	head, err := client.Filer().Head(ctx, "/advanced/moved.txt")
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
-	if header.Get("Seaweed-Project") != "sdk" {
-		t.Fatalf("Seaweed-Project = %q, want sdk", header.Get("Seaweed-Project"))
+	if head.Header.Get("Seaweed-Project") != "sdk" {
+		t.Fatalf("Seaweed-Project = %q, want sdk", head.Header.Get("Seaweed-Project"))
 	}
 	if err := client.Filer().DeleteTags(ctx, "/advanced/moved.txt", "Project"); err != nil {
 		t.Fatalf("DeleteTags() error = %v", err)
 	}
-	header, err = client.Filer().Head(ctx, "/advanced/moved.txt")
+	head, err = client.Filer().Head(ctx, "/advanced/moved.txt")
 	if err != nil {
 		t.Fatalf("Head after delete tags error = %v", err)
 	}
-	if header.Get("Seaweed-Project") != "" {
-		t.Fatalf("Seaweed-Project after delete = %q, want empty", header.Get("Seaweed-Project"))
+	if head.Header.Get("Seaweed-Project") != "" {
+		t.Fatalf("Seaweed-Project after delete = %q, want empty", head.Header.Get("Seaweed-Project"))
 	}
 }
 

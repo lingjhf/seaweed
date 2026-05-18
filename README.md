@@ -133,7 +133,7 @@ Use the filer client for path-based file operations, metadata, directories, and 
 ctx := context.Background()
 data := "hello filer"
 
-_, err := client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader(data), filer.PutOptions{
+_, err := client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader(data), filer.WriteOptions{
     ContentType:   "text/plain",
     ContentLength: int64(len(data)),
     SeaweedHeaders: map[string]string{
@@ -150,7 +150,7 @@ if err != nil {
 }
 fmt.Println(entry.FullPath, entry.FileSize)
 
-list, err := client.Filer().List(ctx, "/sdk", filer.ListOptions{Limit: 100})
+list, err := client.Filer().ListPage(ctx, "/sdk", filer.ListOptions{Limit: 100})
 if err != nil {
     return err
 }

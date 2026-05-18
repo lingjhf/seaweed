@@ -25,7 +25,7 @@ func BenchmarkEscapePath(b *testing.B) {
 
 func BenchmarkPutQuery(b *testing.B) {
 	offset := int64(1024)
-	opts := PutOptions{
+	opts := WriteOptions{
 		DataCenter:         "dc1",
 		Rack:               "rack1",
 		DataNode:           "node1",

@@ -29,7 +29,7 @@ type Client struct {
 	http      *httpx.Client
 }
 
-type PutOptions struct {
+type WriteOptions struct {
 	DataCenter         string
 	Rack               string
 	DataNode           string
@@ -48,11 +48,34 @@ type PutOptions struct {
 	ContentLength      int64
 }
 
-type WriteResponse struct {
+type AppendOptions struct {
+	DataCenter         string
+	Rack               string
+	DataNode           string
+	Collection         string
+	Replication        string
+	TTL                string
+	MaxMB              int
+	Mode               string
+	Fsync              bool
+	SaveInside         bool
+	SkipCheckParentDir bool
+	ContentType        string
+	ContentDisposition string
+	SeaweedHeaders     map[string]string
+	ContentLength      int64
+}
+
+type WriteResult struct {
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
 	ETag  string `json:"eTag"`
 	Error string `json:"error,omitempty"`
+}
+
+type HeadResult struct {
+	Header http.Header
+	Tags   map[string]string
 }
 
 type GetOptions struct {
@@ -77,7 +100,7 @@ type DeleteOptions struct {
 	SkipChunkDeletion    bool
 }
 
-type ListResponse struct {
+type ListPage struct {
 	Path                  string  `json:"Path"`
 	Entries               []Entry `json:"Entries"`
 	Limit                 int     `json:"Limit"`
@@ -136,18 +159,15 @@ func New(config Config) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) Put(ctx context.Context, path string, body io.Reader, opts PutOptions) (*WriteResponse, error) {
+func (c *Client) Put(ctx context.Context, path string, body io.Reader, opts WriteOptions) (*WriteResult, error) {
 	return c.write(ctx, path, body, opts, "")
 }
 
-func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts PutOptions) (*WriteResponse, error) {
-	if opts.Offset != nil {
-		return nil, fmt.Errorf("filer: append is incompatible with offset")
-	}
-	return c.write(ctx, path, body, opts, "append")
+func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts AppendOptions) (*WriteResult, error) {
+	return c.write(ctx, path, body, writeOptionsFromAppend(opts), "append")
 }
 
-func (c *Client) write(ctx context.Context, path string, body io.Reader, opts PutOptions, op string) (*WriteResponse, error) {
+func (c *Client) write(ctx context.Context, path string, body io.Reader, opts WriteOptions, op string) (*WriteResult, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
@@ -155,7 +175,7 @@ func (c *Client) write(ctx context.Context, path string, body io.Reader, opts Pu
 	query := putQuery(opts)
 	httpx.AddString(query, "op", op)
 
-	var out WriteResponse
+	var out WriteResult
 	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPut,
 		Query:         query,
@@ -262,7 +282,7 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 	return resp, nil
 }
 
-func (c *Client) Head(ctx context.Context, path string) (http.Header, error) {
+func (c *Client) Head(ctx context.Context, path string) (*HeadResult, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
@@ -278,7 +298,11 @@ func (c *Client) Head(ctx context.Context, path string) (http.Header, error) {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
-	return resp.Header.Clone(), nil
+	header := resp.Header.Clone()
+	return &HeadResult{
+		Header: header,
+		Tags:   seaweedTags(header),
+	}, nil
 }
 
 func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entry, error) {
@@ -299,7 +323,7 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 	return &out, err
 }
 
-func (c *Client) List(ctx context.Context, path string, opts ListOptions) (*ListResponse, error) {
+func (c *Client) ListPage(ctx context.Context, path string, opts ListOptions) (*ListPage, error) {
 	resourcePath, err := c.resourcePath(ensureTrailingSlash(path))
 	if err != nil {
 		return nil, err
@@ -310,7 +334,7 @@ func (c *Client) List(ctx context.Context, path string, opts ListOptions) (*List
 	httpx.AddString(query, "namePattern", opts.NamePattern)
 	httpx.AddString(query, "namePatternExclude", opts.NamePatternExclude)
 
-	var out ListResponse
+	var out ListPage
 	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,
@@ -346,7 +370,7 @@ func (c *Client) resourcePath(path string) (string, error) {
 	return escapedPath, nil
 }
 
-func putQuery(opts PutOptions) url.Values {
+func putQuery(opts WriteOptions) url.Values {
 	query := url.Values{}
 	httpx.AddString(query, "dataCenter", opts.DataCenter)
 	httpx.AddString(query, "rack", opts.Rack)
@@ -365,7 +389,7 @@ func putQuery(opts PutOptions) url.Values {
 	return query
 }
 
-func putHeader(opts PutOptions) http.Header {
+func putHeader(opts WriteOptions) http.Header {
 	header := http.Header{}
 	addHeader(header, "Content-Type", opts.ContentType)
 	addHeader(header, "Content-Disposition", opts.ContentDisposition)
@@ -373,6 +397,37 @@ func putHeader(opts PutOptions) http.Header {
 		header.Set("Seaweed-"+strings.TrimPrefix(key, "Seaweed-"), value)
 	}
 	return header
+}
+
+func writeOptionsFromAppend(opts AppendOptions) WriteOptions {
+	return WriteOptions{
+		DataCenter:         opts.DataCenter,
+		Rack:               opts.Rack,
+		DataNode:           opts.DataNode,
+		Collection:         opts.Collection,
+		Replication:        opts.Replication,
+		TTL:                opts.TTL,
+		MaxMB:              opts.MaxMB,
+		Mode:               opts.Mode,
+		Fsync:              opts.Fsync,
+		SaveInside:         opts.SaveInside,
+		SkipCheckParentDir: opts.SkipCheckParentDir,
+		ContentType:        opts.ContentType,
+		ContentDisposition: opts.ContentDisposition,
+		SeaweedHeaders:     opts.SeaweedHeaders,
+		ContentLength:      opts.ContentLength,
+	}
+}
+
+func seaweedTags(header http.Header) map[string]string {
+	tags := map[string]string{}
+	for key, values := range header {
+		if len(values) == 0 || !strings.HasPrefix(key, "Seaweed-") {
+			continue
+		}
+		tags[strings.TrimPrefix(key, "Seaweed-")] = values[0]
+	}
+	return tags
 }
 
 func addHeader(header http.Header, key string, value string) {

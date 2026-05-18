@@ -31,7 +31,7 @@ func TestFilerCoreIntegration(t *testing.T) {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
 
-	_, err = client.Filer().Put(ctx, "/docs/report.txt", strings.NewReader("filer-data"), filer.PutOptions{
+	_, err = client.Filer().Put(ctx, "/docs/report.txt", strings.NewReader("filer-data"), filer.WriteOptions{
 		ContentType:   "text/plain",
 		ContentLength: int64(len("filer-data")),
 		SeaweedHeaders: map[string]string{
@@ -55,12 +55,12 @@ func TestFilerCoreIntegration(t *testing.T) {
 		t.Fatalf("body = %q, want filer-data", body)
 	}
 
-	header, err := client.Filer().Head(ctx, "/docs/report.txt")
+	head, err := client.Filer().Head(ctx, "/docs/report.txt")
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
-	if header.Get("Seaweed-Owner") != "sdk" {
-		t.Fatalf("Seaweed-Owner = %q, want sdk", header.Get("Seaweed-Owner"))
+	if head.Header.Get("Seaweed-Owner") != "sdk" {
+		t.Fatalf("Seaweed-Owner = %q, want sdk", head.Header.Get("Seaweed-Owner"))
 	}
 
 	entry, err := client.Filer().Stat(ctx, "/docs/report.txt", filer.StatOptions{})
@@ -71,7 +71,7 @@ func TestFilerCoreIntegration(t *testing.T) {
 		t.Fatalf("FullPath = %q, want /docs/report.txt", entry.FullPath)
 	}
 
-	list, err := client.Filer().List(ctx, "/docs", filer.ListOptions{Limit: 10})
+	list, err := client.Filer().ListPage(ctx, "/docs", filer.ListOptions{Limit: 10})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
