@@ -1,0 +1,5 @@
+/weed
+/coverage.out
+/dist/
+/tmp/
+*.test

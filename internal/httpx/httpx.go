@@ -1,0 +1,230 @@
+package httpx
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type RetryPolicy struct {
+	MaxAttempts int
+	Wait        time.Duration
+}
+
+type Config struct {
+	HTTPClient  *http.Client
+	UserAgent   string
+	BearerToken string
+	Retry       RetryPolicy
+}
+
+type Client struct {
+	httpClient  *http.Client
+	userAgent   string
+	bearerToken string
+	retry       RetryPolicy
+}
+
+type Request struct {
+	Method        string
+	URL           string
+	Query         url.Values
+	Header        http.Header
+	Body          io.Reader
+	ContentLength int64
+}
+
+type Error struct {
+	Method     string
+	URL        string
+	StatusCode int
+	Header     http.Header
+	Body       string
+}
+
+func (e *Error) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("%s %s: unexpected status %d", e.Method, e.URL, e.StatusCode)
+	}
+	return fmt.Sprintf("%s %s: unexpected status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+}
+
+func NewClient(config Config) *Client {
+	return &Client{
+		httpClient:  config.HTTPClient,
+		userAgent:   config.UserAgent,
+		bearerToken: config.BearerToken,
+		retry:       config.Retry,
+	}
+}
+
+func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error) {
+	if request.Method == "" {
+		return nil, fmt.Errorf("httpx: method is required")
+	}
+	if request.URL == "" {
+		return nil, fmt.Errorf("httpx: url is required")
+	}
+	attempts := c.retry.MaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		req, err := c.newHTTPRequest(ctx, request)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err == nil && !shouldRetryResponse(req.Method, resp.StatusCode) {
+			return resp, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if attempt == attempts || !isRetryableMethod(request.Method) {
+			if err != nil {
+				return nil, err
+			}
+			return resp, nil
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+
+		timer := time.NewTimer(c.retry.Wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error {
+	resp, err := c.Do(ctx, request)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return responseError(request.Method, request.URL, resp)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...int) error {
+	resp, err := c.Do(ctx, request)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	for _, status := range expected {
+		if resp.StatusCode == status {
+			return nil
+		}
+	}
+	return responseError(request.Method, request.URL, resp)
+}
+
+func (c *Client) newHTTPRequest(ctx context.Context, request Request) (*http.Request, error) {
+	rawURL := request.URL
+	if len(request.Query) > 0 {
+		separator := "?"
+		if strings.Contains(rawURL, "?") {
+			separator = "&"
+		}
+		rawURL += separator + request.Query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, request.Method, rawURL, request.Body)
+	if err != nil {
+		return nil, err
+	}
+	if request.ContentLength >= 0 {
+		req.ContentLength = request.ContentLength
+	}
+	for key, values := range request.Header {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
+	if c.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+	}
+	return req, nil
+}
+
+func responseError(method, rawURL string, resp *http.Response) error {
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if readErr != nil {
+		body = []byte("failed to read response body: " + readErr.Error())
+	}
+	return &Error{
+		Method:     method,
+		URL:        rawURL,
+		StatusCode: resp.StatusCode,
+		Header:     resp.Header.Clone(),
+		Body:       strings.TrimSpace(string(body)),
+	}
+}
+
+func isRetryableMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldRetryResponse(method string, status int) bool {
+	if !isRetryableMethod(method) {
+		return false
+	}
+	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func AddInt(query url.Values, key string, value int) {
+	if value != 0 {
+		query.Set(key, strconv.Itoa(value))
+	}
+}
+
+func AddInt64(query url.Values, key string, value int64) {
+	if value != 0 {
+		query.Set(key, strconv.FormatInt(value, 10))
+	}
+}
+
+func AddFloat64(query url.Values, key string, value float64) {
+	if value != 0 {
+		query.Set(key, strconv.FormatFloat(value, 'f', -1, 64))
+	}
+}
+
+func AddString(query url.Values, key string, value string) {
+	if value != "" {
+		query.Set(key, value)
+	}
+}
