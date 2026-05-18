@@ -381,12 +381,18 @@ func addMetadata(header http.Header, metadata map[string]string) {
 	if len(metadata) == 0 {
 		return
 	}
-	parts := make([]string, 0, len(metadata))
+	var builder strings.Builder
+	first := true
 	for key, value := range metadata {
-		encoded := base64.StdEncoding.EncodeToString([]byte(value))
-		parts = append(parts, key+" "+encoded)
+		if !first {
+			builder.WriteByte(',')
+		}
+		builder.WriteString(key)
+		builder.WriteByte(' ')
+		builder.WriteString(base64.StdEncoding.EncodeToString([]byte(value)))
+		first = false
 	}
-	header.Set("Upload-Metadata", strings.Join(parts, ","))
+	header.Set("Upload-Metadata", builder.String())
 }
 
 func parseIntHeader(value string) (int64, error) {
@@ -416,17 +422,33 @@ func escapePath(path string) (string, error) {
 		return "/", nil
 	}
 	hasTrailingSlash := strings.HasSuffix(path, "/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	escaped := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part == "" {
-			continue
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return "/", nil
+	}
+	var builder strings.Builder
+	builder.Grow(len(path) + 8)
+	builder.WriteByte('/')
+	wrote := false
+	for start := 0; start < len(trimmed); {
+		for start < len(trimmed) && trimmed[start] == '/' {
+			start++
 		}
-		escaped = append(escaped, url.PathEscape(part))
+		end := start
+		for end < len(trimmed) && trimmed[end] != '/' {
+			end++
+		}
+		if end > start {
+			if wrote {
+				builder.WriteByte('/')
+			}
+			builder.WriteString(url.PathEscape(trimmed[start:end]))
+			wrote = true
+		}
+		start = end + 1
 	}
-	out := "/" + strings.Join(escaped, "/")
-	if hasTrailingSlash {
-		out += "/"
+	if hasTrailingSlash && wrote {
+		builder.WriteByte('/')
 	}
-	return out, nil
+	return builder.String(), nil
 }

@@ -398,22 +398,35 @@ func escapePath(path string) (string, error) {
 		return "", fmt.Errorf("filer: path is required")
 	}
 	hasTrailingSlash := strings.HasSuffix(path, "/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	escaped := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		escaped = append(escaped, url.PathEscape(part))
-	}
-	if len(escaped) == 0 {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
 		return "/", nil
 	}
-	out := "/" + strings.Join(escaped, "/")
-	if hasTrailingSlash {
-		out += "/"
+	var builder strings.Builder
+	builder.Grow(len(path) + 8)
+	builder.WriteByte('/')
+	wrote := false
+	for start := 0; start < len(trimmed); {
+		for start < len(trimmed) && trimmed[start] == '/' {
+			start++
+		}
+		end := start
+		for end < len(trimmed) && trimmed[end] != '/' {
+			end++
+		}
+		if end > start {
+			if wrote {
+				builder.WriteByte('/')
+			}
+			builder.WriteString(url.PathEscape(trimmed[start:end]))
+			wrote = true
+		}
+		start = end + 1
 	}
-	return out, nil
+	if hasTrailingSlash && wrote {
+		builder.WriteByte('/')
+	}
+	return builder.String(), nil
 }
 
 func ensureTrailingSlash(path string) string {
