@@ -111,6 +111,20 @@ func TestErrorString(t *testing.T) {
 	}
 }
 
+func TestAPIErrorString(t *testing.T) {
+	t.Parallel()
+
+	err := &httpx.APIError{
+		Method:  http.MethodPost,
+		URL:     "http://example.test/file",
+		Message: "no writable volumes",
+	}
+	want := "POST http://example.test/file: api error: no writable volumes"
+	if got := err.Error(); got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+}
+
 func TestDoValidation(t *testing.T) {
 	t.Parallel()
 
@@ -710,6 +724,41 @@ func TestDecodeJSONEndpoint(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONEndpointReturnsAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/assign" {
+			t.Fatalf("path = %q, want /assign", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"error":"no writable volumes"}`))
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	err = client.DecodeJSONEndpoint(context.Background(), endpoints, "/assign", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}, &map[string]any{})
+	if err == nil {
+		t.Fatal("DecodeJSONEndpoint() error = nil, want API error")
+	}
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != "no writable volumes" {
+		t.Fatalf("APIError.Message = %q, want no writable volumes", apiErr.Message)
+	}
+	if apiErr.URL != server.URL+"/assign" {
+		t.Fatalf("APIError.URL = %q, want %s", apiErr.URL, server.URL+"/assign")
+	}
+}
+
 func TestDecodeJSONEndpointReturnsDecodeError(t *testing.T) {
 	t.Parallel()
 
@@ -853,6 +902,31 @@ func TestDecodeJSON(t *testing.T) {
 				t.Fatalf("DecodeJSON() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestDecodeJSONReturnsAPIErrorWithNilOutput(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"error":"permission denied"}`))
+	}))
+	defer server.Close()
+
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+	err := client.DecodeJSON(context.Background(), httpx.Request{
+		Method: http.MethodPost,
+		URL:    server.URL,
+	}, nil)
+	if err == nil {
+		t.Fatal("DecodeJSON() error = nil, want API error")
+	}
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != "permission denied" {
+		t.Fatalf("APIError.Message = %q, want permission denied", apiErr.Message)
 	}
 }
 

@@ -3,10 +3,12 @@ package master_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 )
 
@@ -155,6 +157,24 @@ func TestClientVolumeManagementRequests(t *testing.T) {
 	if err := client.DeleteCollection(context.Background(), "photos"); err != nil {
 		t.Fatalf("DeleteCollection() error = %v", err)
 	}
+}
+
+func TestClientReturnsJSONAPIErrors(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "no writable volumes",
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.Assign(context.Background(), master.AssignOptions{})
+	if err == nil {
+		t.Fatal("Assign() error = nil, want API error")
+	}
+	assertAPIError(t, err, "no writable volumes")
 }
 
 func TestClientStatusRequests(t *testing.T) {
@@ -368,5 +388,16 @@ func assertQuery(t *testing.T, got string, want string) {
 	t.Helper()
 	if got != want {
 		t.Fatalf("query value = %q, want %q", got, want)
+	}
+}
+
+func assertAPIError(t *testing.T, err error, want string) {
+	t.Helper()
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != want {
+		t.Fatalf("APIError.Message = %q, want %q", apiErr.Message, want)
 	}
 }

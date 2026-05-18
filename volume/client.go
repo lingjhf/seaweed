@@ -43,10 +43,9 @@ type PutOptions struct {
 
 // PutResponse is returned by a successful volume upload.
 type PutResponse struct {
-	Name  string `json:"name"`
-	Size  int64  `json:"size"`
-	ETag  string `json:"eTag"`
-	Error string `json:"error,omitempty"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	ETag string `json:"eTag"`
 }
 
 // GetOptions configures a file download from a volume server.

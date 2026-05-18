@@ -365,6 +365,7 @@ See `CHANGELOG.md` and `RELEASE.md` before cutting a release.
 
 ## Notes
 
+- JSON responses with an `error` field are returned as `*seaweed.APIError`.
 - S3/IAM uses AWS SDK for Go v2 and path-style S3 addressing.
 - IAM defaults to `S3URLs` because SeaweedFS embeds IAM in the S3 server by default.
 - TUS implements SeaweedFS-supported TUS 1.0.0 operations: creation, creation-with-upload, offset upload, resume, and termination.

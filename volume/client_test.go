@@ -87,6 +87,26 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 	}
 }
 
+func TestPutReturnsJSONAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "write failed",
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.Put(context.Background(), "3,abc", stringsReader("hello"), volume.PutOptions{
+		ContentLength: 5,
+	})
+	if err == nil {
+		t.Fatal("Put() error = nil, want API error")
+	}
+	assertAPIError(t, err, "write failed")
+}
+
 func TestGetReturnsStream(t *testing.T) {
 	t.Parallel()
 
@@ -285,5 +305,16 @@ func assertHTTPStatus(t *testing.T, err error, want int) {
 	}
 	if httpErr.StatusCode != want {
 		t.Fatalf("status = %d, want %d", httpErr.StatusCode, want)
+	}
+}
+
+func assertAPIError(t *testing.T, err error, want string) {
+	t.Helper()
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != want {
+		t.Fatalf("APIError.Message = %q, want %q", apiErr.Message, want)
 	}
 }

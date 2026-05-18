@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,12 +54,24 @@ type Error struct {
 	Body       string
 }
 
+// APIError describes an API-level error returned in a successful JSON response.
+type APIError struct {
+	Method  string
+	URL     string
+	Message string
+}
+
 // Error formats the HTTP response error.
 func (e *Error) Error() string {
 	if e.Body == "" {
 		return fmt.Sprintf("%s %s: unexpected status %d", e.Method, e.URL, e.StatusCode)
 	}
 	return fmt.Sprintf("%s %s: unexpected status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+}
+
+// Error formats the API-level response error.
+func (e *APIError) Error() string {
+	return fmt.Sprintf("%s %s: api error: %s", e.Method, e.URL, e.Message)
 }
 
 // NewClient creates a shared HTTP API client.
@@ -180,13 +193,7 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 	}
-	if out == nil {
-		return nil
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	return nil
+	return decodeJSONResponse(resp, request, out)
 }
 
 // DecodeJSONEndpoint sends request through endpoints and decodes JSON into out.
@@ -200,13 +207,7 @@ func (c *Client) DecodeJSONEndpoint(ctx context.Context, endpoints *EndpointSet,
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 	}
-	if out == nil {
-		return nil
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	return nil
+	return decodeJSONResponse(resp, request, out)
 }
 
 // CheckStatus sends request and requires one of the expected response statuses.
@@ -291,6 +292,37 @@ func ResponseError(method, rawURL string, resp *http.Response) error {
 		Header:     resp.Header.Clone(),
 		Body:       strings.TrimSpace(string(body)),
 	}
+}
+
+func decodeJSONResponse(resp *http.Response, request Request, out any) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		if out == nil {
+			return nil
+		}
+		return fmt.Errorf("decode response: %w", io.EOF)
+	}
+	var apiError struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &apiError); err == nil && apiError.Error != "" {
+		return &APIError{
+			Method:  request.Method,
+			URL:     responseURL(resp, request.URL),
+			Message: apiError.Error,
+		}
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
 }
 
 // IsHTTPStatus reports whether err is an Error with a status in [min, max].

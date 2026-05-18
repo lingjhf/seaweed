@@ -77,7 +77,6 @@ type AssignResponse struct {
 	FID       string `json:"fid"`
 	URL       string `json:"url"`
 	PublicURL string `json:"publicUrl"`
-	Error     string `json:"error,omitempty"`
 }
 
 // LookupOptions configures a /dir/lookup request.
@@ -90,7 +89,6 @@ type LookupOptions struct {
 // LookupResponse is returned by /dir/lookup.
 type LookupResponse struct {
 	Locations []Location `json:"locations"`
-	Error     string     `json:"error,omitempty"`
 }
 
 // Location describes a volume server returned by master lookup.
@@ -117,8 +115,7 @@ type GrowOptions struct {
 
 // CountResponse is returned by master endpoints that report a count.
 type CountResponse struct {
-	Count int    `json:"count"`
-	Error string `json:"error,omitempty"`
+	Count int `json:"count"`
 }
 
 // ClusterStatus describes master leader and peer state.
