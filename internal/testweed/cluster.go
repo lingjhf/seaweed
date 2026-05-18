@@ -22,6 +22,7 @@ type Cluster struct {
 	VolumeURL string
 	FilerURL  string
 	S3URL     string
+	S3URLs    []string
 
 	masterAddress string
 	filerAddress  string
@@ -100,9 +101,19 @@ func StartMasterVolumeFilerS3(t *testing.T, ctx context.Context) *Cluster {
 	t.Helper()
 
 	cluster := StartMasterVolumeFiler(t, ctx)
-	s3Port, s3GRPCPort := freeDistinctPortPair(t, cluster.usedPorts()...)
-	cluster.S3URL = fmt.Sprintf("http://127.0.0.1:%d", s3Port)
-	cluster.startWithEnv(t, ctx, findWeedBinary(t), []string{
+	cluster.StartS3(t, ctx)
+	return cluster
+}
+
+func (c *Cluster) StartS3(t *testing.T, ctx context.Context) string {
+	t.Helper()
+
+	if c.filerAddress == "" {
+		t.Fatal("testweed: filer must be started before s3")
+	}
+	s3Port, s3GRPCPort := freeDistinctPortPair(t, c.usedPorts()...)
+	s3URL := fmt.Sprintf("http://127.0.0.1:%d", s3Port)
+	c.startWithEnv(t, ctx, findWeedBinary(t), []string{
 		"AWS_ACCESS_KEY_ID=seaweed_admin",
 		"AWS_SECRET_ACCESS_KEY=seaweed_secret",
 	}, "s3",
@@ -110,11 +121,15 @@ func StartMasterVolumeFilerS3(t *testing.T, ctx context.Context) *Cluster {
 		"-port.grpc", fmt.Sprint(s3GRPCPort),
 		"-port.iceberg", "0",
 		"-ip.bind", "127.0.0.1",
-		"-filer", cluster.filerAddress,
+		"-filer", c.filerAddress,
 		"-iam.readOnly=false",
 	)
-	cluster.waitForHTTP(t, ctx, cluster.S3URL+"/")
-	return cluster
+	c.waitForHTTP(t, ctx, s3URL+"/")
+	if c.S3URL == "" {
+		c.S3URL = s3URL
+	}
+	c.S3URLs = append(c.S3URLs, s3URL)
+	return s3URL
 }
 
 func (c *Cluster) Stop() {
@@ -151,7 +166,7 @@ func (c *Cluster) startWithEnv(t *testing.T, ctx context.Context, name string, e
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	logPath := filepath.Join(c.dataDir, args[0]+".log")
+	logPath := filepath.Join(c.dataDir, fmt.Sprintf("%s-%d.log", args[0], len(c.logs)+1))
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		t.Fatalf("create log file %s: %v", logPath, err)
@@ -378,7 +393,9 @@ func (c *Cluster) dumpLogs(t *testing.T) {
 
 func (c *Cluster) usedPorts() []int {
 	ports := []int{}
-	for _, rawURL := range []string{c.MasterURL, c.VolumeURL, c.FilerURL} {
+	rawURLs := []string{c.MasterURL, c.VolumeURL, c.FilerURL}
+	rawURLs = append(rawURLs, c.S3URLs...)
+	for _, rawURL := range rawURLs {
 		if rawURL == "" {
 			continue
 		}
