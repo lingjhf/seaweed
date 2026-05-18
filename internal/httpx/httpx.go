@@ -119,7 +119,7 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return responseError(request.Method, request.URL, resp)
+		return ResponseError(request.Method, request.URL, resp)
 	}
 	if out == nil {
 		return nil
@@ -142,7 +142,7 @@ func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...i
 			return nil
 		}
 	}
-	return responseError(request.Method, request.URL, resp)
+	return ResponseError(request.Method, request.URL, resp)
 }
 
 func (c *Client) newHTTPRequest(ctx context.Context, request Request) (*http.Request, error) {
@@ -175,7 +175,7 @@ func (c *Client) newHTTPRequest(ctx context.Context, request Request) (*http.Req
 	return req, nil
 }
 
-func responseError(method, rawURL string, resp *http.Response) error {
+func ResponseError(method, rawURL string, resp *http.Response) error {
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if readErr != nil {
 		body = []byte("failed to read response body: " + readErr.Error())
@@ -187,6 +187,14 @@ func responseError(method, rawURL string, resp *http.Response) error {
 		Header:     resp.Header.Clone(),
 		Body:       strings.TrimSpace(string(body)),
 	}
+}
+
+func IsHTTPStatus(err error, min int, max int) bool {
+	httpErr, ok := err.(*Error)
+	if !ok {
+		return false
+	}
+	return httpErr.StatusCode >= min && httpErr.StatusCode <= max
 }
 
 func isRetryableMethod(method string) bool {

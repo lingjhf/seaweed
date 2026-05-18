@@ -30,7 +30,7 @@ func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
 	weed := findWeedBinary(t)
 	dataDir := t.TempDir()
 	masterPort, masterGRPCPort := freePortPair(t)
-	volumePort, volumeGRPCPort := freePortPair(t)
+	volumePort, volumeGRPCPort := freeDistinctPortPair(t, masterPort, masterGRPCPort)
 
 	cluster := &Cluster{
 		MasterURL: fmt.Sprintf("http://127.0.0.1:%d", masterPort),
@@ -185,7 +185,7 @@ func assertExecutable(t *testing.T, path string) {
 func freePortPair(t *testing.T) (int, int) {
 	t.Helper()
 
-	start := 20000 + int(time.Now().UnixNano()%20000)
+	start := 20000 + int((time.Now().UnixNano()+int64(os.Getpid()*137))%20000)
 	for offset := range 20000 {
 		port := 20000 + (start+offset)%20000
 		grpcPort := port + 10000
@@ -204,6 +204,28 @@ func freePortPair(t *testing.T) (int, int) {
 	}
 	t.Fatal("allocate port pair")
 	return 0, 0
+}
+
+func freeDistinctPortPair(t *testing.T, used ...int) (int, int) {
+	t.Helper()
+
+	for {
+		port, grpcPort := freePortPair(t)
+		if portIsUsed(port, used) || portIsUsed(grpcPort, used) {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		return port, grpcPort
+	}
+}
+
+func portIsUsed(port int, used []int) bool {
+	for _, existing := range used {
+		if port == existing {
+			return true
+		}
+	}
+	return false
 }
 
 func mkdir(t *testing.T, path string) {

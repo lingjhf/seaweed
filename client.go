@@ -6,8 +6,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/lingjhf/seaweed/blob"
 	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
+	"github.com/lingjhf/seaweed/volume"
 )
 
 const defaultTusBasePath = "/.tus"
@@ -16,6 +18,8 @@ type Client struct {
 	config Config
 
 	master *master.Client
+	volume *volume.Client
+	blob   *blob.Client
 }
 
 func New(config Config, opts ...Option) (*Client, error) {
@@ -43,6 +47,13 @@ func New(config Config, opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("seaweed: invalid master url: %w", err)
 	}
 	config.MasterURL = masterURL
+	if config.VolumeURL != "" {
+		volumeURL, err := normalizeBaseURL(config.VolumeURL)
+		if err != nil {
+			return nil, fmt.Errorf("seaweed: invalid volume url: %w", err)
+		}
+		config.VolumeURL = volumeURL
+	}
 
 	transport := httpx.NewClient(httpx.Config{
 		HTTPClient:  applied.httpClient,
@@ -58,6 +69,15 @@ func New(config Config, opts ...Option) (*Client, error) {
 			HTTP:    transport,
 		}),
 	}
+	client.volume = volume.New(volume.Config{
+		BaseURL: config.VolumeURL,
+		HTTP:    transport,
+	})
+	client.blob = blob.New(blob.Config{
+		Master:        client.master,
+		HTTP:          transport,
+		UsePublicURLs: config.UsePublicURLs,
+	})
 	return client, nil
 }
 
@@ -67,6 +87,14 @@ func (c *Client) Config() Config {
 
 func (c *Client) Master() *master.Client {
 	return c.master
+}
+
+func (c *Client) Volume() *volume.Client {
+	return c.volume
+}
+
+func (c *Client) Blob() *blob.Client {
+	return c.blob
 }
 
 func normalizeBaseURL(raw string) (string, error) {

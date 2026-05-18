@@ -20,6 +20,7 @@ type Config struct {
 	SecretAccessKey string
 	BearerToken     string
 	UserAgent       string
+	UsePublicURLs   bool
 	Retry           RetryPolicy
 }
 
