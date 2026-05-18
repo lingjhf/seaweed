@@ -55,6 +55,14 @@ type EndpointCandidate struct {
 	URL   string
 }
 
+type EndpointLease struct {
+	Index int
+	URL   string
+
+	set      *EndpointSet
+	halfOpen bool
+}
+
 type endpointState struct {
 	failures         int
 	successes        int
@@ -204,6 +212,29 @@ func (s *EndpointSet) Candidates(path string) []EndpointCandidate {
 	return append(halfOpen, candidates...)
 }
 
+func (s *EndpointSet) Lease(path string) (*EndpointLease, error) {
+	for _, candidate := range s.Candidates(path) {
+		available, halfOpen := s.beginCandidate(candidate.Index)
+		if !available {
+			continue
+		}
+		return &EndpointLease{
+			Index:    candidate.Index,
+			URL:      candidate.URL,
+			set:      s,
+			halfOpen: halfOpen,
+		}, nil
+	}
+	return nil, fmt.Errorf("httpx: no available endpoints")
+}
+
+func (l *EndpointLease) Finish(success bool) {
+	if l == nil || l.set == nil {
+		return
+	}
+	l.set.finishCandidate(l.Index, l.halfOpen, success)
+}
+
 func (s *EndpointSet) MarkSuccess(index int) {
 	s.RecordSuccess(index)
 }
@@ -223,6 +254,23 @@ func (s *EndpointSet) RecordFailure(index int) {
 	defer s.mu.Unlock()
 
 	if index < 0 || index >= len(s.urls) {
+		return
+	}
+	s.recordFailureLocked(index, time.Now())
+}
+
+func (s *EndpointSet) FinishCandidate(index int, success bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if index < 0 || index >= len(s.urls) {
+		return
+	}
+	if s.states[index].halfOpenRequests > 0 {
+		s.states[index].halfOpenRequests--
+	}
+	if success {
+		s.recordSuccessLocked(index)
 		return
 	}
 	s.recordFailureLocked(index, time.Now())

@@ -66,7 +66,7 @@ if err != nil {
 defer client.Close()
 ```
 
-Health checks and circuit breakers are opt-in. Non-retryable write requests still use one selected endpoint and are not replayed across endpoints.
+Health checks and circuit breakers are opt-in. Native non-retryable write requests still use one selected endpoint and are not replayed across endpoints. S3 and IAM clients rely on the AWS SDK retryer; the SDK resolves an endpoint before SigV4 signing for each SDK attempt.
 
 ```go
 client, err := seaweed.New(seaweed.Config{
@@ -91,6 +91,38 @@ if err != nil {
     return err
 }
 defer client.Close()
+```
+
+Use service-specific endpoint policies when S3 or IAM should scale independently from the native clients. S3 and IAM treat transport errors, HTTP 429, and HTTP 5xx as endpoint failures; HTTP 4xx responses are request-level failures and do not open the endpoint circuit breaker.
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{"http://master-1:9333"},
+    S3URLs: []string{
+        "http://s3-1:8333",
+        "http://s3-2:8333",
+    },
+    AccessKeyID:     "seaweed_admin",
+    SecretAccessKey: "seaweed_secret",
+    S3EndpointPolicy: seaweed.EndpointPolicy{
+        Mode: seaweed.EndpointPolicyRoundRobin,
+        CircuitBreaker: seaweed.EndpointCircuitBreakerPolicy{
+            Enabled:          true,
+            FailureThreshold: 2,
+            OpenTimeout:      10 * time.Second,
+        },
+    },
+})
+if err != nil {
+    return err
+}
+defer client.Close()
+
+s3Client, err := client.S3(ctx)
+if err != nil {
+    return err
+}
+_, err = s3Client.ListBuckets(ctx, nil)
 ```
 
 Blob reads discover volume replicas through master lookup. `Get` and `Head` use all returned locations for read failover; `Delete` uses the selected endpoint only. Use `BlobEndpointPolicy` when the blob read path should differ from the global policy, and set `BlobLocationCacheTTL` when cached volume locations should refresh periodically.

@@ -33,6 +33,18 @@ client, err := seaweed.New(seaweed.Config{
 })
 ```
 
+S3 and IAM now use endpoint policy through AWS SDK v2 endpoint resolution. Configure `S3EndpointPolicy` or `IAMEndpointPolicy` when those clients need their own round-robin, health check, or circuit breaker behavior.
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{"http://127.0.0.1:9333"},
+    S3URLs:     []string{"http://s3-1:8333", "http://s3-2:8333"},
+    S3EndpointPolicy: seaweed.EndpointPolicy{
+        Mode: seaweed.EndpointPolicyRoundRobin,
+    },
+})
+```
+
 Blob reads use master lookup results as a per-volume location cache. Configure `BlobEndpointPolicy` when the Blob read path needs its own selection behavior, and `BlobLocationCacheTTL` when lookup locations should be refreshed periodically.
 
 ```go

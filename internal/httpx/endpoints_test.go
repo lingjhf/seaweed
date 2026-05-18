@@ -146,6 +146,33 @@ func TestEndpointSetCandidatesRoundRobin(t *testing.T) {
 	}
 }
 
+func TestEndpointSetLeaseRoundRobin(t *testing.T) {
+	t.Parallel()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{
+		"http://one.example.test",
+		"http://two.example.test",
+	}, httpx.EndpointPolicy{Mode: httpx.EndpointPolicyRoundRobin})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+
+	first, err := endpoints.Lease("/status")
+	if err != nil {
+		t.Fatalf("first Lease() error = %v", err)
+	}
+	first.Finish(true)
+	second, err := endpoints.Lease("/status")
+	if err != nil {
+		t.Fatalf("second Lease() error = %v", err)
+	}
+	second.Finish(true)
+
+	if first.URL != "http://one.example.test/status" || second.URL != "http://two.example.test/status" {
+		t.Fatalf("leases = %q, %q; want round-robin order", first.URL, second.URL)
+	}
+}
+
 func TestNormalizeEndpointPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -322,6 +349,74 @@ func TestEndpointSetCircuitBreakerLimitsHalfOpenRequests(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("first half-open request did not finish")
+	}
+}
+
+func TestEndpointSetLeaseLimitsHalfOpenRequests(t *testing.T) {
+	t.Parallel()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{"http://example.test"}, httpx.EndpointPolicy{
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled:             true,
+			FailureThreshold:    1,
+			OpenTimeout:         time.Millisecond,
+			HalfOpenMaxRequests: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	endpoints.RecordFailure(0)
+	time.Sleep(5 * time.Millisecond)
+
+	lease, err := endpoints.Lease("/status")
+	if err != nil {
+		t.Fatalf("first Lease() error = %v", err)
+	}
+	if _, err := endpoints.Lease("/status"); err == nil || !strings.Contains(err.Error(), "no available endpoints") {
+		t.Fatalf("second Lease() error = %v, want no available endpoints", err)
+	}
+	lease.Finish(true)
+
+	next, err := endpoints.Lease("/status")
+	if err != nil {
+		t.Fatalf("Lease() after Finish() error = %v", err)
+	}
+	next.Finish(true)
+}
+
+func TestEndpointSetFinishCandidateRecordsPolicyState(t *testing.T) {
+	t.Parallel()
+
+	var nilLease *httpx.EndpointLease
+	nilLease.Finish(true)
+
+	failover, err := httpx.NewEndpointSetWithPolicy([]string{
+		"http://one.example.test",
+		"http://two.example.test",
+	}, httpx.EndpointPolicy{})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	failover.FinishCandidate(-1, false)
+	failover.FinishCandidate(1, true)
+	if got := failover.Candidates("/status")[0].URL; got != "http://two.example.test/status" {
+		t.Fatalf("active candidate = %q, want second endpoint", got)
+	}
+
+	breaker, err := httpx.NewEndpointSetWithPolicy([]string{"http://one.example.test"}, httpx.EndpointPolicy{
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled:          true,
+			FailureThreshold: 1,
+			OpenTimeout:      time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	breaker.FinishCandidate(0, false)
+	if _, err := breaker.Lease("/status"); err == nil || !strings.Contains(err.Error(), "no available endpoints") {
+		t.Fatalf("Lease() error = %v, want open circuit", err)
 	}
 }
 

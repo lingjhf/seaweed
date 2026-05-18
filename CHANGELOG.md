@@ -19,6 +19,7 @@ This project is in the `0.x` development line. Minor releases can include breaki
 
 - Endpoint policy support for failover, round-robin, health checks, and circuit breakers.
 - Native endpoint failover for retryable requests.
+- S3 and IAM endpoint lists now support round-robin, health checks, and circuit breakers through AWS SDK endpoint resolution.
 - Blob volume lookup cache now stores all master locations, supports read failover, `BlobEndpointPolicy`, and `BlobLocationCacheTTL`.
 - Concurrent Blob cache misses for the same volume are coalesced into one master lookup.
 - Circuit breaker half-open request limiting.

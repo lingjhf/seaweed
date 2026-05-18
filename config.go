@@ -41,6 +41,8 @@ type Config struct {
 	BlobEndpointPolicy   EndpointPolicy
 	FilerEndpointPolicy  EndpointPolicy
 	TUSEndpointPolicy    EndpointPolicy
+	S3EndpointPolicy     EndpointPolicy
+	IAMEndpointPolicy    EndpointPolicy
 }
 
 type Option func(*options)

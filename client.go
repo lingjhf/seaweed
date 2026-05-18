@@ -29,6 +29,9 @@ type Client struct {
 	blob   *blob.Client
 	filer  *filer.Client
 	tus    *tus.Client
+
+	s3Endpoints  *httpx.EndpointSet
+	iamEndpoints *httpx.EndpointSet
 }
 
 func New(config Config, opts ...Option) (*Client, error) {
@@ -70,6 +73,12 @@ func New(config Config, opts ...Option) (*Client, error) {
 	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.TUSEndpointPolicy, config.EndpointPolicy)); err != nil {
 		return nil, fmt.Errorf("seaweed: invalid tus endpoint policy: %w", err)
 	}
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.S3EndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid s3 endpoint policy: %w", err)
+	}
+	if _, err := httpx.NormalizeEndpointPolicy(endpointPolicyOrDefault(config.IAMEndpointPolicy, config.EndpointPolicy)); err != nil {
+		return nil, fmt.Errorf("seaweed: invalid iam endpoint policy: %w", err)
+	}
 
 	masterURLs, err := httpx.NormalizeBaseURLs(config.MasterURLs)
 	if err != nil {
@@ -108,6 +117,27 @@ func New(config Config, opts ...Option) (*Client, error) {
 		config.Region = "us-east-1"
 	}
 
+	var s3Endpoints *httpx.EndpointSet
+	if len(config.S3URLs) > 0 {
+		s3Endpoints, err = httpx.NewEndpointSetWithPolicy(config.S3URLs, endpointPolicyOrDefault(config.S3EndpointPolicy, config.EndpointPolicy))
+		if err != nil {
+			return nil, fmt.Errorf("seaweed: invalid s3 endpoint policy: %w", err)
+		}
+		s3Endpoints.StartHealthCheck(applied.httpClient, http.MethodGet, "/")
+	}
+	var iamEndpoints *httpx.EndpointSet
+	iamURLs := config.IAMURLs
+	if len(iamURLs) == 0 {
+		iamURLs = config.S3URLs
+	}
+	if len(iamURLs) > 0 {
+		iamEndpoints, err = httpx.NewEndpointSetWithPolicy(iamURLs, endpointPolicyOrDefault(config.IAMEndpointPolicy, config.EndpointPolicy))
+		if err != nil {
+			return nil, fmt.Errorf("seaweed: invalid iam endpoint policy: %w", err)
+		}
+		iamEndpoints.StartHealthCheck(applied.httpClient, http.MethodGet, "/")
+	}
+
 	masterClient, err := master.New(master.Config{
 		BaseURLs:       config.MasterURLs,
 		HTTPClient:     applied.httpClient,
@@ -120,9 +150,11 @@ func New(config Config, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	client := &Client{
-		config: config,
-		http:   applied.httpClient,
-		master: masterClient,
+		config:       config,
+		http:         applied.httpClient,
+		master:       masterClient,
+		s3Endpoints:  s3Endpoints,
+		iamEndpoints: iamEndpoints,
 	}
 	if len(config.VolumeURLs) > 0 {
 		client.volume, err = volume.New(volume.Config{
@@ -219,10 +251,16 @@ func (c *Client) Close() {
 	if c.tus != nil {
 		c.tus.Close()
 	}
+	if c.s3Endpoints != nil {
+		c.s3Endpoints.Close()
+	}
+	if c.iamEndpoints != nil {
+		c.iamEndpoints.Close()
+	}
 }
 
 func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
-	if len(c.config.S3URLs) == 0 {
+	if c.s3Endpoints == nil {
 		return nil, fmt.Errorf("seaweed: s3 urls are required")
 	}
 	cfg, err := c.awsConfig(ctx)
@@ -230,17 +268,15 @@ func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
 		return nil, err
 	}
 	return s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(c.config.S3URLs[0])
+		o.EndpointResolverV2 = s3EndpointResolver{endpoints: c.s3Endpoints}
+		o.AuthSchemeResolver = s3AuthSchemeResolver{}
+		o.APIOptions = append(o.APIOptions, awsEndpointPolicyMiddleware(c.s3Endpoints))
 		o.UsePathStyle = true
 	}), nil
 }
 
 func (c *Client) IAM(ctx context.Context) (*iam.Client, error) {
-	endpoints := c.config.IAMURLs
-	if len(endpoints) == 0 {
-		endpoints = c.config.S3URLs
-	}
-	if len(endpoints) == 0 {
+	if c.iamEndpoints == nil {
 		return nil, fmt.Errorf("seaweed: iam urls or s3 urls are required")
 	}
 	cfg, err := c.awsConfig(ctx)
@@ -248,7 +284,9 @@ func (c *Client) IAM(ctx context.Context) (*iam.Client, error) {
 		return nil, err
 	}
 	return iam.NewFromConfig(cfg, func(o *iam.Options) {
-		o.BaseEndpoint = aws.String(endpoints[0])
+		o.EndpointResolverV2 = iamEndpointResolver{endpoints: c.iamEndpoints}
+		o.AuthSchemeResolver = iamAuthSchemeResolver{}
+		o.APIOptions = append(o.APIOptions, awsEndpointPolicyMiddleware(c.iamEndpoints))
 	}), nil
 }
 

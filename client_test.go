@@ -142,6 +142,12 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 		BlobEndpointPolicy: seaweed.EndpointPolicy{
 			Mode: seaweed.EndpointPolicyRoundRobin,
 		},
+		S3EndpointPolicy: seaweed.EndpointPolicy{
+			Mode: seaweed.EndpointPolicyRoundRobin,
+		},
+		IAMEndpointPolicy: seaweed.EndpointPolicy{
+			Mode: seaweed.EndpointPolicyRoundRobin,
+		},
 	}, seaweed.WithHTTPClient(httpClient))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -174,6 +180,12 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 	}
 	if config.BlobEndpointPolicy.Mode != seaweed.EndpointPolicyRoundRobin {
 		t.Fatalf("BlobEndpointPolicy.Mode = %q, want round-robin", config.BlobEndpointPolicy.Mode)
+	}
+	if config.S3EndpointPolicy.Mode != seaweed.EndpointPolicyRoundRobin {
+		t.Fatalf("S3EndpointPolicy.Mode = %q, want round-robin", config.S3EndpointPolicy.Mode)
+	}
+	if config.IAMEndpointPolicy.Mode != seaweed.EndpointPolicyRoundRobin {
+		t.Fatalf("IAMEndpointPolicy.Mode = %q, want round-robin", config.IAMEndpointPolicy.Mode)
 	}
 	if client.Master() == nil || client.Volume() == nil || client.Blob() == nil || client.Filer() == nil || client.TUS() == nil {
 		t.Fatal("client accessors returned nil")
@@ -267,9 +279,13 @@ func TestClientClose(t *testing.T) {
 	defer server.Close()
 
 	client, err := seaweed.New(seaweed.Config{
-		MasterURLs: []string{server.URL},
-		VolumeURLs: []string{server.URL},
-		FilerURLs:  []string{server.URL},
+		MasterURLs:      []string{server.URL},
+		VolumeURLs:      []string{server.URL},
+		FilerURLs:       []string{server.URL},
+		S3URLs:          []string{server.URL},
+		IAMURLs:         []string{server.URL},
+		AccessKeyID:     "access",
+		SecretAccessKey: "secret",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -362,6 +378,24 @@ func TestNewRejectsInvalidEndpointPolicy(t *testing.T) {
 			config: seaweed.Config{
 				MasterURLs: []string{"http://127.0.0.1:9333"},
 				BlobEndpointPolicy: seaweed.EndpointPolicy{
+					Mode: "random",
+				},
+			},
+		},
+		{
+			name: "s3",
+			config: seaweed.Config{
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				S3EndpointPolicy: seaweed.EndpointPolicy{
+					Mode: "random",
+				},
+			},
+		},
+		{
+			name: "iam",
+			config: seaweed.Config{
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				IAMEndpointPolicy: seaweed.EndpointPolicy{
 					Mode: "random",
 				},
 			},
