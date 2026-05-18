@@ -236,6 +236,17 @@ func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	}
 }
 
+func TestClientClose(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	client.Close()
+	client.Close()
+}
+
 func stringsReader(s string) io.Reader {
 	return strings.NewReader(s)
 }

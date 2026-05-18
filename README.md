@@ -47,6 +47,51 @@ By default, `seaweed.New` uses an SDK HTTP client with a larger idle connection 
 
 Native SeaweedFS clients accept endpoint lists, for example `MasterURLs`, `VolumeURLs`, `FilerURLs`, and direct client `BaseURLs`. S3/IAM clients still use a single AWS SDK endpoint.
 
+Endpoint lists use failover by default. Enable round-robin when you want retryable read requests to start from a different endpoint on each call:
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{
+        "http://master-1:9333",
+        "http://master-2:9333",
+    },
+    EndpointPolicy: seaweed.EndpointPolicy{
+        Mode: seaweed.EndpointPolicyRoundRobin,
+    },
+})
+if err != nil {
+    return err
+}
+defer client.Close()
+```
+
+Health checks and circuit breakers are opt-in. Non-retryable write requests still use one selected endpoint and are not replayed across endpoints.
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs: []string{"http://master-1:9333", "http://master-2:9333"},
+    FilerURLs:  []string{"http://filer-1:8888", "http://filer-2:8888"},
+    EndpointPolicy: seaweed.EndpointPolicy{
+        HealthCheck: seaweed.EndpointHealthCheckPolicy{
+            Enabled:          true,
+            Interval:         5 * time.Second,
+            Timeout:          time.Second,
+            FailureThreshold: 2,
+            SuccessThreshold: 1,
+        },
+        CircuitBreaker: seaweed.EndpointCircuitBreakerPolicy{
+            Enabled:          true,
+            FailureThreshold: 3,
+            OpenTimeout:      30 * time.Second,
+        },
+    },
+})
+if err != nil {
+    return err
+}
+defer client.Close()
+```
+
 ## Usage Examples
 
 ### Blob Upload

@@ -214,6 +214,60 @@ func TestNewPropagatesRoundRobinEndpointPolicy(t *testing.T) {
 	}
 }
 
+func TestNewUsesServiceEndpointPolicyOverride(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer first.Close()
+	var secondCalls int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer second.Close()
+
+	client, err := seaweed.New(seaweed.Config{
+		MasterURLs:     []string{first.URL, second.URL},
+		EndpointPolicy: seaweed.DefaultEndpointPolicy(),
+		MasterEndpointPolicy: seaweed.EndpointPolicy{
+			Mode: seaweed.EndpointPolicyRoundRobin,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for range 2 {
+		if err := client.Master().Health(context.Background()); err != nil {
+			t.Fatalf("Health() error = %v", err)
+		}
+	}
+	if firstCalls != 1 || secondCalls != 1 {
+		t.Fatalf("master calls = %d/%d, want service override round robin", firstCalls, secondCalls)
+	}
+}
+
+func TestClientClose(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	client, err := seaweed.New(seaweed.Config{
+		MasterURLs: []string{server.URL},
+		VolumeURLs: []string{server.URL},
+		FilerURLs:  []string{server.URL},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	client.Close()
+	client.Close()
+}
+
 func TestNewRejectsNilHTTPClient(t *testing.T) {
 	t.Parallel()
 

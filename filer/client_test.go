@@ -343,6 +343,17 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	}
 }
 
+func TestClientClose(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	client.Close()
+	client.Close()
+}
+
 func newTestClient(t *testing.T, server *httptest.Server) *filer.Client {
 	t.Helper()
 	client, err := filer.New(filer.Config{

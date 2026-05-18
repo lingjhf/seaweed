@@ -504,6 +504,17 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 	})
 }
 
+func TestClientClose(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	client.Close()
+	client.Close()
+}
+
 func newTestClient(t *testing.T, server *httptest.Server) *tus.Client {
 	t.Helper()
 	client, err := tus.New(tus.Config{
