@@ -56,10 +56,11 @@ type EndpointCandidate struct {
 }
 
 type endpointState struct {
-	failures  int
-	successes int
-	unhealthy bool
-	openUntil time.Time
+	failures         int
+	successes        int
+	unhealthy        bool
+	openUntil        time.Time
+	halfOpenRequests int
 }
 
 func NewEndpointSet(rawURLs []string) (*EndpointSet, error) {
@@ -214,16 +215,7 @@ func (s *EndpointSet) RecordSuccess(index int) {
 	if index < 0 || index >= len(s.urls) {
 		return
 	}
-	state := &s.states[index]
-	state.failures = 0
-	state.successes++
-	if !s.policy.HealthCheck.Enabled || state.successes >= s.policy.HealthCheck.SuccessThreshold {
-		state.unhealthy = false
-	}
-	state.openUntil = time.Time{}
-	if s.policy.Mode == EndpointPolicyFailover && index >= 0 && index < len(s.urls) {
-		s.active = index
-	}
+	s.recordSuccessLocked(index)
 }
 
 func (s *EndpointSet) RecordFailure(index int) {
@@ -233,6 +225,63 @@ func (s *EndpointSet) RecordFailure(index int) {
 	if index < 0 || index >= len(s.urls) {
 		return
 	}
+	s.recordFailureLocked(index, time.Now())
+}
+
+func (s *EndpointSet) beginCandidate(index int) (bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if index < 0 || index >= len(s.urls) {
+		return false, false
+	}
+	now := time.Now()
+	if s.skipLocked(index, now) {
+		return false, false
+	}
+	if !s.halfOpenLocked(index, now) {
+		return true, false
+	}
+	state := &s.states[index]
+	if state.halfOpenRequests >= s.policy.CircuitBreaker.HalfOpenMaxRequests {
+		return false, false
+	}
+	state.halfOpenRequests++
+	return true, true
+}
+
+func (s *EndpointSet) finishCandidate(index int, halfOpen bool, success bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if index < 0 || index >= len(s.urls) {
+		return
+	}
+	if halfOpen && s.states[index].halfOpenRequests > 0 {
+		s.states[index].halfOpenRequests--
+	}
+	if success {
+		s.recordSuccessLocked(index)
+		return
+	}
+	s.recordFailureLocked(index, time.Now())
+}
+
+func (s *EndpointSet) recordSuccessLocked(index int) {
+	state := &s.states[index]
+	state.failures = 0
+	state.successes++
+	if !s.policy.HealthCheck.Enabled || state.successes >= s.policy.HealthCheck.SuccessThreshold {
+		state.unhealthy = false
+	}
+	state.openUntil = time.Time{}
+	state.halfOpenRequests = 0
+	if s.policy.Mode == EndpointPolicyFailover && index >= 0 && index < len(s.urls) {
+		s.active = index
+	}
+}
+
+func (s *EndpointSet) recordFailureLocked(index int, now time.Time) {
 	state := &s.states[index]
 	state.failures++
 	state.successes = 0
@@ -240,7 +289,8 @@ func (s *EndpointSet) RecordFailure(index int) {
 		state.unhealthy = true
 	}
 	if s.policy.CircuitBreaker.Enabled && state.failures >= s.policy.CircuitBreaker.FailureThreshold {
-		state.openUntil = time.Now().Add(s.policy.CircuitBreaker.OpenTimeout)
+		state.openUntil = now.Add(s.policy.CircuitBreaker.OpenTimeout)
+		state.halfOpenRequests = 0
 	}
 }
 
@@ -279,7 +329,13 @@ func (s *EndpointSet) skipLocked(index int, now time.Time) bool {
 	if s.policy.HealthCheck.Enabled && state.unhealthy {
 		return true
 	}
-	return s.policy.CircuitBreaker.Enabled && state.openUntil.After(now)
+	if !s.policy.CircuitBreaker.Enabled {
+		return false
+	}
+	if state.openUntil.After(now) {
+		return true
+	}
+	return !state.openUntil.IsZero() && state.halfOpenRequests >= s.policy.CircuitBreaker.HalfOpenMaxRequests
 }
 
 func (s *EndpointSet) halfOpenLocked(index int, now time.Time) bool {

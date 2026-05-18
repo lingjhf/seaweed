@@ -125,13 +125,17 @@ func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path st
 
 	var lastErr error
 	for i, candidate := range candidates {
+		available, halfOpen := endpoints.beginCandidate(candidate.Index)
+		if !available {
+			continue
+		}
 		request.URL = candidate.URL
 		resp, err := c.Do(ctx, request)
 		if err == nil && !isEndpointFailureResponse(resp.StatusCode) {
-			endpoints.RecordSuccess(candidate.Index)
+			endpoints.finishCandidate(candidate.Index, halfOpen, true)
 			return resp, nil
 		}
-		endpoints.RecordFailure(candidate.Index)
+		endpoints.finishCandidate(candidate.Index, halfOpen, false)
 		if err == nil && !shouldRetryResponse(request.Method, resp.StatusCode) {
 			return resp, nil
 		}
@@ -149,6 +153,9 @@ func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path st
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+	}
+	if lastErr == nil {
+		return nil, fmt.Errorf("httpx: no available endpoints")
 	}
 	return nil, lastErr
 }

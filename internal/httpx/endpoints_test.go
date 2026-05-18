@@ -1,8 +1,11 @@
 package httpx_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -248,6 +251,78 @@ func TestEndpointSetCloseIsIdempotent(t *testing.T) {
 	endpoints.StartHealthCheck(http.DefaultClient, http.MethodGet, "/")
 	endpoints.Close()
 	endpoints.Close()
+}
+
+func TestEndpointSetCircuitBreakerLimitsHalfOpenRequests(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		entered <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	defer releaseOnce.Do(func() { close(release) })
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{server.URL}, httpx.EndpointPolicy{
+		CircuitBreaker: httpx.EndpointCircuitBreakerPolicy{
+			Enabled:             true,
+			FailureThreshold:    1,
+			OpenTimeout:         time.Millisecond,
+			HalfOpenMaxRequests: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	endpoints.RecordFailure(0)
+	time.Sleep(5 * time.Millisecond)
+
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+	firstErr := make(chan error, 1)
+	go func() {
+		resp, err := client.DoEndpoint(context.Background(), endpoints, "/health", httpx.Request{
+			Method: http.MethodGet,
+		})
+		if resp != nil {
+			resp.Body.Close()
+		}
+		firstErr <- err
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first half-open request did not reach server")
+	}
+
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/health", httpx.Request{
+		Method: http.MethodGet,
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "no available endpoints") {
+		t.Fatalf("second DoEndpoint() error = %v, want no available endpoints", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("server calls = %d, want only one half-open request", calls.Load())
+	}
+
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case err := <-firstErr:
+		if err != nil {
+			t.Fatalf("first DoEndpoint() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first half-open request did not finish")
+	}
 }
 
 func waitFor(t *testing.T, condition func() bool) {
