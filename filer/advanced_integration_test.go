@@ -20,8 +20,8 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 
 	cluster := testweed.StartMasterVolumeFiler(t, ctx)
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL: cluster.MasterURL,
-		FilerURL:  cluster.FilerURL,
+		MasterURLs: []string{cluster.MasterURL},
+		FilerURLs:  []string{cluster.FilerURL},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

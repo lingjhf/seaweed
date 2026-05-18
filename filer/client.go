@@ -13,7 +13,7 @@ import (
 )
 
 type Config struct {
-	BaseURL     string
+	BaseURLs    []string
 	HTTPClient  *http.Client
 	UserAgent   string
 	BearerToken string
@@ -23,8 +23,8 @@ type Config struct {
 type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
-	baseURL string
-	http    *httpx.Client
+	endpoints *httpx.EndpointSet
+	http      *httpx.Client
 }
 
 type PutOptions struct {
@@ -111,14 +111,18 @@ type Chunk struct {
 }
 
 func New(config Config) (*Client, error) {
-	if config.BaseURL == "" {
-		return nil, fmt.Errorf("filer: base url is required")
+	if len(config.BaseURLs) == 0 {
+		return nil, fmt.Errorf("filer: base urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
 	}
+	endpoints, err := httpx.NewEndpointSet(config.BaseURLs)
+	if err != nil {
+		return nil, fmt.Errorf("filer: invalid base urls: %w", err)
+	}
 	return &Client{
-		baseURL: config.BaseURL,
+		endpoints: endpoints,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
 			UserAgent:   config.UserAgent,
@@ -342,14 +346,11 @@ func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) er
 }
 
 func (c *Client) resourceURL(path string) (string, error) {
-	if c.baseURL == "" {
-		return "", fmt.Errorf("filer: base url is required")
-	}
 	escapedPath, err := escapePath(path)
 	if err != nil {
 		return "", err
 	}
-	return c.baseURL + escapedPath, nil
+	return c.endpoints.URL(escapedPath), nil
 }
 
 func putQuery(opts PutOptions) url.Values {

@@ -25,8 +25,8 @@ Create a root client for the SeaweedFS services you use:
 
 ```go
 client, err := seaweed.New(seaweed.Config{
-    MasterURL:   "http://127.0.0.1:9333",
-    FilerURL:    "http://127.0.0.1:8888",
+    MasterURLs:  []string{"http://127.0.0.1:9333"},
+    FilerURLs:   []string{"http://127.0.0.1:8888"},
     TUSBasePath: "/.tus",
     S3URL:       "http://127.0.0.1:8333",
 
@@ -44,6 +44,8 @@ See `examples/basic` and `examples/s3`.
 Direct package clients such as `master.New`, `volume.New`, `filer.New`, and `tus.New` return `(*Client, error)` and accept standard `*http.Client` configuration. They do not expose SDK internal transport types.
 
 By default, `seaweed.New` uses an SDK HTTP client with a larger idle connection pool than Go's default transport. Use `seaweed.NewHTTPClient` when passing the same tuned client to direct package constructors.
+
+Native SeaweedFS clients accept endpoint lists, for example `MasterURLs`, `VolumeURLs`, `FilerURLs`, and direct client `BaseURLs`. S3/IAM clients still use a single AWS SDK endpoint.
 
 ## Usage Examples
 
@@ -192,7 +194,7 @@ Use direct clients when you want to wire only one SeaweedFS API surface.
 httpClient := seaweed.NewHTTPClient(seaweed.DefaultHTTPClientConfig())
 
 masterClient, err := master.New(master.Config{
-    BaseURL:    "http://127.0.0.1:9333",
+    BaseURLs:   []string{"http://127.0.0.1:9333"},
     HTTPClient: httpClient,
 })
 if err != nil {

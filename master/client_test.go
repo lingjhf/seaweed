@@ -47,11 +47,11 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 	}
 }
 
-func TestNewRequiresBaseURL(t *testing.T) {
+func TestNewRequiresBaseURLs(t *testing.T) {
 	t.Parallel()
 
 	if _, err := master.New(master.Config{}); err == nil {
-		t.Fatal("master.New() error = nil, want base url error")
+		t.Fatal("master.New() error = nil, want base urls error")
 	}
 }
 
@@ -226,7 +226,7 @@ func TestClientStatusRequests(t *testing.T) {
 func newTestClient(t *testing.T, server *httptest.Server) *master.Client {
 	t.Helper()
 	client, err := master.New(master.Config{
-		BaseURL:    server.URL,
+		BaseURLs:   []string{server.URL},
 		HTTPClient: server.Client(),
 	})
 	if err != nil {

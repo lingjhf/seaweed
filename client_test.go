@@ -9,7 +9,7 @@ import (
 	"github.com/lingjhf/seaweed"
 )
 
-func TestNewRequiresMasterURL(t *testing.T) {
+func TestNewRequiresMasterURLs(t *testing.T) {
 	t.Parallel()
 
 	_, err := seaweed.New(seaweed.Config{})
@@ -18,17 +18,17 @@ func TestNewRequiresMasterURL(t *testing.T) {
 	}
 }
 
-func TestNewNormalizesMasterURL(t *testing.T) {
+func TestNewNormalizesMasterURLs(t *testing.T) {
 	t.Parallel()
 
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL: "http://127.0.0.1:9333/",
+		MasterURLs: []string{"http://127.0.0.1:9333/"},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if client.Config().MasterURL != "http://127.0.0.1:9333" {
-		t.Fatalf("MasterURL = %q", client.Config().MasterURL)
+	if got := client.Config().MasterURLs; len(got) != 1 || got[0] != "http://127.0.0.1:9333" {
+		t.Fatalf("MasterURLs = %#v", got)
 	}
 	if client.Config().TUSBasePath != "/.tus" {
 		t.Fatalf("TUSBasePath = %q", client.Config().TUSBasePath)
@@ -97,9 +97,9 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 
 	httpClient := &http.Client{}
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL:       "http://127.0.0.1:9333/master/?q=1#fragment",
-		VolumeURL:       "http://127.0.0.1:8080/volume/",
-		FilerURL:        "http://127.0.0.1:8888/filer/",
+		MasterURLs:      []string{"http://127.0.0.1:9333/master/?q=1#fragment"},
+		VolumeURLs:      []string{"http://127.0.0.1:8080/volume/"},
+		FilerURLs:       []string{"http://127.0.0.1:8888/filer/"},
 		TUSBasePath:     "uploads",
 		S3URL:           "http://127.0.0.1:8333/s3/",
 		IAMURL:          "http://127.0.0.1:8333/iam/",
@@ -114,14 +114,14 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 	}
 
 	config := client.Config()
-	if config.MasterURL != "http://127.0.0.1:9333/master" {
-		t.Fatalf("MasterURL = %q", config.MasterURL)
+	if len(config.MasterURLs) != 1 || config.MasterURLs[0] != "http://127.0.0.1:9333/master" {
+		t.Fatalf("MasterURLs = %#v", config.MasterURLs)
 	}
-	if config.VolumeURL != "http://127.0.0.1:8080/volume" {
-		t.Fatalf("VolumeURL = %q", config.VolumeURL)
+	if len(config.VolumeURLs) != 1 || config.VolumeURLs[0] != "http://127.0.0.1:8080/volume" {
+		t.Fatalf("VolumeURLs = %#v", config.VolumeURLs)
 	}
-	if config.FilerURL != "http://127.0.0.1:8888/filer" {
-		t.Fatalf("FilerURL = %q", config.FilerURL)
+	if len(config.FilerURLs) != 1 || config.FilerURLs[0] != "http://127.0.0.1:8888/filer" {
+		t.Fatalf("FilerURLs = %#v", config.FilerURLs)
 	}
 	if config.S3URL != "http://127.0.0.1:8333/s3" {
 		t.Fatalf("S3URL = %q", config.S3URL)
@@ -150,7 +150,7 @@ func TestNewRejectsNilHTTPClient(t *testing.T) {
 	t.Parallel()
 
 	_, err := seaweed.New(seaweed.Config{
-		MasterURL: "http://127.0.0.1:9333",
+		MasterURLs: []string{"http://127.0.0.1:9333"},
 	}, seaweed.WithHTTPClient(nil))
 	if err == nil {
 		t.Fatal("New() error = nil, want nil http client error")
@@ -167,35 +167,35 @@ func TestNewRejectsInvalidURLs(t *testing.T) {
 		{
 			name: "master",
 			config: seaweed.Config{
-				MasterURL: "127.0.0.1:9333",
+				MasterURLs: []string{"127.0.0.1:9333"},
 			},
 		},
 		{
 			name: "volume",
 			config: seaweed.Config{
-				MasterURL: "http://127.0.0.1:9333",
-				VolumeURL: "127.0.0.1:8080",
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				VolumeURLs: []string{"127.0.0.1:8080"},
 			},
 		},
 		{
 			name: "filer",
 			config: seaweed.Config{
-				MasterURL: "http://127.0.0.1:9333",
-				FilerURL:  "127.0.0.1:8888",
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				FilerURLs:  []string{"127.0.0.1:8888"},
 			},
 		},
 		{
 			name: "s3",
 			config: seaweed.Config{
-				MasterURL: "http://127.0.0.1:9333",
-				S3URL:     "127.0.0.1:8333",
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				S3URL:      "127.0.0.1:8333",
 			},
 		},
 		{
 			name: "iam",
 			config: seaweed.Config{
-				MasterURL: "http://127.0.0.1:9333",
-				IAMURL:    "127.0.0.1:8333",
+				MasterURLs: []string{"http://127.0.0.1:9333"},
+				IAMURL:     "127.0.0.1:8333",
 			},
 		},
 	}
@@ -213,7 +213,7 @@ func TestIAMFallsBackToS3Endpoint(t *testing.T) {
 	t.Parallel()
 
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL:       "http://127.0.0.1:9333",
+		MasterURLs:      []string{"http://127.0.0.1:9333"},
 		S3URL:           "http://127.0.0.1:8333",
 		AccessKeyID:     "access",
 		SecretAccessKey: "secret",

@@ -13,8 +13,8 @@ import (
 func main() {
 	ctx := context.Background()
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL: "http://127.0.0.1:9333",
-		FilerURL:  "http://127.0.0.1:8888",
+		MasterURLs: []string{"http://127.0.0.1:9333"},
+		FilerURLs:  []string{"http://127.0.0.1:8888"},
 	})
 	if err != nil {
 		panic(err)

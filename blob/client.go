@@ -174,7 +174,7 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 
 func (c *Client) volumeClient(baseURL string) (*volume.Client, error) {
 	return volume.New(volume.Config{
-		BaseURL:     baseURL,
+		BaseURLs:    []string{baseURL},
 		HTTPClient:  c.httpClient,
 		UserAgent:   c.userAgent,
 		BearerToken: c.bearerToken,

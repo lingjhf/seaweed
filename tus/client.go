@@ -16,7 +16,7 @@ import (
 const Version = "1.0.0"
 
 type Config struct {
-	FilerURL    string
+	FilerURLs   []string
 	BasePath    string
 	HTTPClient  *http.Client
 	UserAgent   string
@@ -28,7 +28,7 @@ type Config struct {
 type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
-	filerURL    string
+	endpoints   *httpx.EndpointSet
 	basePath    string
 	http        *httpx.Client
 	contentType string
@@ -68,11 +68,15 @@ type ResumeOptions struct {
 }
 
 func New(config Config) (*Client, error) {
-	if config.FilerURL == "" {
-		return nil, fmt.Errorf("tus: filer url is required")
+	if len(config.FilerURLs) == 0 {
+		return nil, fmt.Errorf("tus: filer urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
+	}
+	endpoints, err := httpx.NewEndpointSet(config.FilerURLs)
+	if err != nil {
+		return nil, fmt.Errorf("tus: invalid filer urls: %w", err)
 	}
 	basePath := strings.TrimRight(config.BasePath, "/")
 	if basePath == "" {
@@ -86,8 +90,8 @@ func New(config Config) (*Client, error) {
 		contentType = "application/offset+octet-stream"
 	}
 	return &Client{
-		filerURL: strings.TrimRight(config.FilerURL, "/"),
-		basePath: basePath,
+		endpoints: endpoints,
+		basePath:  basePath,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
 			UserAgent:   config.UserAgent,
@@ -339,14 +343,11 @@ func (c *Client) baseHeader() http.Header {
 }
 
 func (c *Client) baseURL(path string) (string, error) {
-	if c.filerURL == "" {
-		return "", fmt.Errorf("tus: filer url is required")
-	}
 	escaped, err := escapePath(path)
 	if err != nil {
 		return "", err
 	}
-	return c.filerURL + c.basePath + escaped, nil
+	return c.endpoints.URL(c.basePath + escaped), nil
 }
 
 func (c *Client) uploadURL(location string) (string, error) {
@@ -367,9 +368,6 @@ func (c *Client) resolveLocation(location string) (string, error) {
 	if location == "" {
 		return "", fmt.Errorf("tus: location is empty")
 	}
-	if c.filerURL == "" {
-		return "", fmt.Errorf("tus: filer url is required")
-	}
 	parsed, err := url.Parse(location)
 	if err != nil {
 		return "", err
@@ -380,7 +378,7 @@ func (c *Client) resolveLocation(location string) (string, error) {
 	if !strings.HasPrefix(location, "/") {
 		return "", fmt.Errorf("tus: relative location must start with /")
 	}
-	return c.filerURL + location, nil
+	return c.endpoints.URL(location), nil
 }
 
 func addMetadata(header http.Header, metadata map[string]string) {

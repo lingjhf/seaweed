@@ -111,7 +111,7 @@ func TestCreateWithUploadSendsBodyAndHeaders(t *testing.T) {
 	defer server.Close()
 
 	client, err := tus.New(tus.Config{
-		FilerURL:    server.URL,
+		FilerURLs:   []string{server.URL},
 		BasePath:    "uploads",
 		HTTPClient:  server.Client(),
 		ContentType: "application/custom",
@@ -330,10 +330,10 @@ func TestValidationAndResponseErrors(t *testing.T) {
 	t.Parallel()
 
 	if _, err := tus.New(tus.Config{}); err == nil {
-		t.Fatal("tus.New() error = nil, want missing filer url error")
+		t.Fatal("tus.New() error = nil, want missing filer urls error")
 	}
 	client, err := tus.New(tus.Config{
-		FilerURL:   "http://example.test",
+		FilerURLs:  []string{"http://example.test"},
 		HTTPClient: http.DefaultClient,
 	})
 	if err != nil {
@@ -421,7 +421,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 func newTestClient(t *testing.T, server *httptest.Server) *tus.Client {
 	t.Helper()
 	client, err := tus.New(tus.Config{
-		FilerURL:   server.URL,
+		FilerURLs:  []string{server.URL},
 		BasePath:   "/.tus",
 		HTTPClient: server.Client(),
 	})

@@ -300,11 +300,11 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	t.Parallel()
 
 	if _, err := filer.New(filer.Config{}); err == nil {
-		t.Fatal("filer.New() error = nil, want base url error")
+		t.Fatal("filer.New() error = nil, want base urls error")
 	}
 
 	clientWithBaseURL, err := filer.New(filer.Config{
-		BaseURL:    "http://example.test",
+		BaseURLs:   []string{"http://example.test"},
 		HTTPClient: http.DefaultClient,
 	})
 	if err != nil {
@@ -346,7 +346,7 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 func newTestClient(t *testing.T, server *httptest.Server) *filer.Client {
 	t.Helper()
 	client, err := filer.New(filer.Config{
-		BaseURL:    server.URL,
+		BaseURLs:   []string{server.URL},
 		HTTPClient: server.Client(),
 	})
 	if err != nil {

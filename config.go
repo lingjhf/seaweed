@@ -11,9 +11,9 @@ import (
 type RetryPolicy = httpx.RetryPolicy
 
 type Config struct {
-	MasterURL       string
-	VolumeURL       string
-	FilerURL        string
+	MasterURLs      []string
+	VolumeURLs      []string
+	FilerURLs       []string
 	TUSBasePath     string
 	S3URL           string
 	IAMURL          string

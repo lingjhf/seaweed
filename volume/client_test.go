@@ -211,15 +211,15 @@ func TestHTTPErrorResponses(t *testing.T) {
 	}
 }
 
-func TestBaseURLAndFileIDValidation(t *testing.T) {
+func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	t.Parallel()
 
 	if _, err := volume.New(volume.Config{}); err == nil {
-		t.Fatal("volume.New() error = nil, want base url error")
+		t.Fatal("volume.New() error = nil, want base urls error")
 	}
 
 	clientWithBaseURL, err := volume.New(volume.Config{
-		BaseURL:    "http://example.test",
+		BaseURLs:   []string{"http://example.test"},
 		HTTPClient: http.DefaultClient,
 	})
 	if err != nil {
@@ -243,7 +243,7 @@ func stringsReader(s string) io.Reader {
 func newTestClient(t *testing.T, server *httptest.Server) *volume.Client {
 	t.Helper()
 	client, err := volume.New(volume.Config{
-		BaseURL:    server.URL,
+		BaseURLs:   []string{server.URL},
 		HTTPClient: server.Client(),
 	})
 	if err != nil {

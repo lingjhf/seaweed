@@ -19,7 +19,7 @@ func TestMasterAssignLookupIntegration(t *testing.T) {
 
 	cluster := testweed.StartMasterVolume(t, ctx)
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL: cluster.MasterURL,
+		MasterURLs: []string{cluster.MasterURL},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

@@ -10,7 +10,7 @@ import (
 )
 
 type Config struct {
-	BaseURL     string
+	BaseURLs    []string
 	HTTPClient  *http.Client
 	UserAgent   string
 	BearerToken string
@@ -20,19 +20,23 @@ type Config struct {
 type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
-	baseURL string
-	http    *httpx.Client
+	endpoints *httpx.EndpointSet
+	http      *httpx.Client
 }
 
 func New(config Config) (*Client, error) {
-	if config.BaseURL == "" {
-		return nil, fmt.Errorf("master: base url is required")
+	if len(config.BaseURLs) == 0 {
+		return nil, fmt.Errorf("master: base urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
 	}
+	endpoints, err := httpx.NewEndpointSet(config.BaseURLs)
+	if err != nil {
+		return nil, fmt.Errorf("master: invalid base urls: %w", err)
+	}
 	return &Client{
-		baseURL: config.BaseURL,
+		endpoints: endpoints,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
 			UserAgent:   config.UserAgent,
@@ -123,7 +127,7 @@ func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignRespons
 	var out AssignResponse
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/dir/assign",
+		URL:    c.endpoints.URL("/dir/assign"),
 		Query:  query,
 	}, &out)
 	return &out, err
@@ -141,7 +145,7 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 	var out LookupResponse
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/dir/lookup",
+		URL:    c.endpoints.URL("/dir/lookup"),
 		Query:  query,
 	}, &out)
 	return &out, err
@@ -152,7 +156,7 @@ func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
 	httpx.AddFloat64(query, "garbageThreshold", garbageThreshold)
 	return c.http.CheckStatus(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/vol/vacuum",
+		URL:    c.endpoints.URL("/vol/vacuum"),
 		Query:  query,
 	}, http.StatusOK)
 }
@@ -173,7 +177,7 @@ func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, er
 	var out CountResponse
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/vol/grow",
+		URL:    c.endpoints.URL("/vol/grow"),
 		Query:  query,
 	}, &out)
 	return &out, err
@@ -184,7 +188,7 @@ func (c *Client) DeleteCollection(ctx context.Context, collection string) error 
 	query.Set("collection", collection)
 	return c.http.CheckStatus(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/col/delete",
+		URL:    c.endpoints.URL("/col/delete"),
 		Query:  query,
 	}, http.StatusOK)
 }
@@ -193,7 +197,7 @@ func (c *Client) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	var out ClusterStatus
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/cluster/status",
+		URL:    c.endpoints.URL("/cluster/status"),
 	}, &out)
 	return &out, err
 }
@@ -201,7 +205,7 @@ func (c *Client) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 func (c *Client) Health(ctx context.Context) error {
 	return c.http.CheckStatus(ctx, httpx.Request{
 		Method: http.MethodHead,
-		URL:    c.baseURL + "/cluster/healthz",
+		URL:    c.endpoints.URL("/cluster/healthz"),
 	}, http.StatusOK)
 }
 
@@ -209,7 +213,7 @@ func (c *Client) DirStatus(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/dir/status",
+		URL:    c.endpoints.URL("/dir/status"),
 	}, &out)
 	return out, err
 }
@@ -218,7 +222,7 @@ func (c *Client) VolumeStatus(ctx context.Context) (map[string]any, error) {
 	out := map[string]any{}
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method: http.MethodGet,
-		URL:    c.baseURL + "/vol/status",
+		URL:    c.endpoints.URL("/vol/status"),
 	}, &out)
 	return out, err
 }

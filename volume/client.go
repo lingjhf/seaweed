@@ -11,7 +11,7 @@ import (
 )
 
 type Config struct {
-	BaseURL     string
+	BaseURLs    []string
 	HTTPClient  *http.Client
 	UserAgent   string
 	BearerToken string
@@ -21,8 +21,8 @@ type Config struct {
 type RetryPolicy = httpx.RetryPolicy
 
 type Client struct {
-	baseURL string
-	http    *httpx.Client
+	endpoints *httpx.EndpointSet
+	http      *httpx.Client
 }
 
 type PutOptions struct {
@@ -45,14 +45,18 @@ type GetOptions struct {
 }
 
 func New(config Config) (*Client, error) {
-	if config.BaseURL == "" {
-		return nil, fmt.Errorf("volume: base url is required")
+	if len(config.BaseURLs) == 0 {
+		return nil, fmt.Errorf("volume: base urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
 	}
+	endpoints, err := httpx.NewEndpointSet(config.BaseURLs)
+	if err != nil {
+		return nil, fmt.Errorf("volume: invalid base urls: %w", err)
+	}
 	return &Client{
-		baseURL: config.BaseURL,
+		endpoints: endpoints,
 		http: httpx.NewClient(httpx.Config{
 			HTTPClient:  config.HTTPClient,
 			UserAgent:   config.UserAgent,
@@ -141,38 +145,29 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 }
 
 func (c *Client) Status(ctx context.Context) (map[string]any, error) {
-	if c.baseURL == "" {
-		return nil, fmt.Errorf("volume: base url is required")
-	}
 	out := map[string]any{}
 	err := c.http.DecodeJSON(ctx, httpx.Request{
 		Method:        http.MethodGet,
-		URL:           c.baseURL + "/status",
+		URL:           c.endpoints.URL("/status"),
 		ContentLength: -1,
 	}, &out)
 	return out, err
 }
 
 func (c *Client) Health(ctx context.Context) error {
-	if c.baseURL == "" {
-		return fmt.Errorf("volume: base url is required")
-	}
 	return c.http.CheckStatus(ctx, httpx.Request{
 		Method:        http.MethodGet,
-		URL:           c.baseURL + "/status",
+		URL:           c.endpoints.URL("/status"),
 		ContentLength: -1,
 	}, http.StatusOK)
 }
 
 func (c *Client) fileURL(fileID string) (string, error) {
-	if c.baseURL == "" {
-		return "", fmt.Errorf("volume: base url is required")
-	}
 	fileID = strings.TrimLeft(fileID, "/")
 	if fileID == "" {
 		return "", fmt.Errorf("volume: file id is required")
 	}
-	return c.baseURL + "/" + fileID, nil
+	return c.endpoints.URL("/") + fileID, nil
 }
 
 func addHeader(header http.Header, key string, value string) {

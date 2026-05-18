@@ -68,7 +68,7 @@ func BenchmarkUploadChunks(b *testing.B) {
 	defer server.Close()
 
 	client, err := New(Config{
-		FilerURL:   server.URL,
+		FilerURLs:  []string{server.URL},
 		HTTPClient: server.Client(),
 	})
 	if err != nil {
@@ -107,7 +107,7 @@ func BenchmarkUploadCreationWithUpload(b *testing.B) {
 	defer server.Close()
 
 	client, err := New(Config{
-		FilerURL:   server.URL,
+		FilerURLs:  []string{server.URL},
 		HTTPClient: server.Client(),
 	})
 	if err != nil {

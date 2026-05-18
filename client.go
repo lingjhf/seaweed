@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -14,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/lingjhf/seaweed/blob"
 	"github.com/lingjhf/seaweed/filer"
+	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/master"
 	"github.com/lingjhf/seaweed/tus"
 	"github.com/lingjhf/seaweed/volume"
@@ -42,8 +41,8 @@ func New(config Config, opts ...Option) (*Client, error) {
 	if applied.httpClient == nil {
 		return nil, fmt.Errorf("seaweed: http client is nil")
 	}
-	if config.MasterURL == "" {
-		return nil, fmt.Errorf("seaweed: master url is required")
+	if len(config.MasterURLs) == 0 {
+		return nil, fmt.Errorf("seaweed: master urls are required")
 	}
 	if config.TUSBasePath == "" {
 		config.TUSBasePath = defaultTUSBasePath
@@ -52,34 +51,34 @@ func New(config Config, opts ...Option) (*Client, error) {
 		config.Retry = DefaultRetryPolicy()
 	}
 
-	masterURL, err := normalizeBaseURL(config.MasterURL)
+	masterURLs, err := httpx.NormalizeBaseURLs(config.MasterURLs)
 	if err != nil {
-		return nil, fmt.Errorf("seaweed: invalid master url: %w", err)
+		return nil, fmt.Errorf("seaweed: invalid master urls: %w", err)
 	}
-	config.MasterURL = masterURL
-	if config.VolumeURL != "" {
-		volumeURL, err := normalizeBaseURL(config.VolumeURL)
+	config.MasterURLs = masterURLs
+	if len(config.VolumeURLs) > 0 {
+		volumeURLs, err := httpx.NormalizeBaseURLs(config.VolumeURLs)
 		if err != nil {
-			return nil, fmt.Errorf("seaweed: invalid volume url: %w", err)
+			return nil, fmt.Errorf("seaweed: invalid volume urls: %w", err)
 		}
-		config.VolumeURL = volumeURL
+		config.VolumeURLs = volumeURLs
 	}
-	if config.FilerURL != "" {
-		filerURL, err := normalizeBaseURL(config.FilerURL)
+	if len(config.FilerURLs) > 0 {
+		filerURLs, err := httpx.NormalizeBaseURLs(config.FilerURLs)
 		if err != nil {
-			return nil, fmt.Errorf("seaweed: invalid filer url: %w", err)
+			return nil, fmt.Errorf("seaweed: invalid filer urls: %w", err)
 		}
-		config.FilerURL = filerURL
+		config.FilerURLs = filerURLs
 	}
 	if config.S3URL != "" {
-		s3URL, err := normalizeBaseURL(config.S3URL)
+		s3URL, err := httpx.NormalizeBaseURL(config.S3URL)
 		if err != nil {
 			return nil, fmt.Errorf("seaweed: invalid s3 url: %w", err)
 		}
 		config.S3URL = s3URL
 	}
 	if config.IAMURL != "" {
-		iamURL, err := normalizeBaseURL(config.IAMURL)
+		iamURL, err := httpx.NormalizeBaseURL(config.IAMURL)
 		if err != nil {
 			return nil, fmt.Errorf("seaweed: invalid iam url: %w", err)
 		}
@@ -90,7 +89,7 @@ func New(config Config, opts ...Option) (*Client, error) {
 	}
 
 	masterClient, err := master.New(master.Config{
-		BaseURL:     config.MasterURL,
+		BaseURLs:    config.MasterURLs,
 		HTTPClient:  applied.httpClient,
 		UserAgent:   config.UserAgent,
 		BearerToken: config.BearerToken,
@@ -104,9 +103,9 @@ func New(config Config, opts ...Option) (*Client, error) {
 		http:   applied.httpClient,
 		master: masterClient,
 	}
-	if config.VolumeURL != "" {
+	if len(config.VolumeURLs) > 0 {
 		client.volume, err = volume.New(volume.Config{
-			BaseURL:     config.VolumeURL,
+			BaseURLs:    config.VolumeURLs,
 			HTTPClient:  applied.httpClient,
 			UserAgent:   config.UserAgent,
 			BearerToken: config.BearerToken,
@@ -127,9 +126,9 @@ func New(config Config, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if config.FilerURL != "" {
+	if len(config.FilerURLs) > 0 {
 		client.filer, err = filer.New(filer.Config{
-			BaseURL:     config.FilerURL,
+			BaseURLs:    config.FilerURLs,
 			HTTPClient:  applied.httpClient,
 			UserAgent:   config.UserAgent,
 			BearerToken: config.BearerToken,
@@ -139,7 +138,7 @@ func New(config Config, opts ...Option) (*Client, error) {
 			return nil, err
 		}
 		client.tus, err = tus.New(tus.Config{
-			FilerURL:    config.FilerURL,
+			FilerURLs:   config.FilerURLs,
 			BasePath:    config.TUSBasePath,
 			HTTPClient:  applied.httpClient,
 			UserAgent:   config.UserAgent,
@@ -223,18 +222,4 @@ func (c *Client) awsConfig(ctx context.Context) (aws.Config, error) {
 		)),
 		awsconfig.WithHTTPClient(c.http),
 	)
-}
-
-func normalizeBaseURL(raw string) (string, error) {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("expected absolute http url")
-	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/")
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String(), nil
 }

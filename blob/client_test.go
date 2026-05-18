@@ -49,7 +49,7 @@ func TestPutAssignsAndUploads(t *testing.T) {
 	defer masterServer.Close()
 
 	masterClient, err := master.New(master.Config{
-		BaseURL:    masterServer.URL,
+		BaseURLs:   []string{masterServer.URL},
 		HTTPClient: masterServer.Client(),
 	})
 	if err != nil {
@@ -320,7 +320,7 @@ func TestInvalidFileID(t *testing.T) {
 func newTestClient(t *testing.T, server *httptest.Server, usePublicURLs bool) *blob.Client {
 	t.Helper()
 	masterClient, err := master.New(master.Config{
-		BaseURL:    server.URL,
+		BaseURLs:   []string{server.URL},
 		HTTPClient: server.Client(),
 	})
 	if err != nil {

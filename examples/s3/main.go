@@ -14,7 +14,7 @@ import (
 func main() {
 	ctx := context.Background()
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL:       "http://127.0.0.1:9333",
+		MasterURLs:      []string{"http://127.0.0.1:9333"},
 		S3URL:           "http://127.0.0.1:8333",
 		AccessKeyID:     "seaweed_admin",
 		SecretAccessKey: "seaweed_secret",

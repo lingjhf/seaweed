@@ -19,8 +19,8 @@ func TestVolumePutGetDeleteIntegration(t *testing.T) {
 
 	cluster := testweed.StartMasterVolume(t, ctx)
 	client, err := seaweed.New(seaweed.Config{
-		MasterURL: cluster.MasterURL,
-		VolumeURL: cluster.VolumeURL,
+		MasterURLs: []string{cluster.MasterURL},
+		VolumeURLs: []string{cluster.VolumeURL},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
