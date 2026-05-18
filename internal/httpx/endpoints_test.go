@@ -214,6 +214,17 @@ func TestNormalizeEndpointPolicyDefaultsHealthAndCircuitBreaker(t *testing.T) {
 	}
 }
 
+func TestNewEndpointSetWithPolicyValidation(t *testing.T) {
+	t.Parallel()
+
+	if _, err := httpx.NewEndpointSetWithPolicy([]string{"relative"}, httpx.EndpointPolicy{}); err == nil {
+		t.Fatal("NewEndpointSetWithPolicy() error = nil, want invalid URL error")
+	}
+	if _, err := httpx.NewEndpointSetWithPolicy([]string{"http://example.test"}, httpx.EndpointPolicy{Mode: "random"}); err == nil {
+		t.Fatal("NewEndpointSetWithPolicy() error = nil, want invalid policy error")
+	}
+}
+
 func TestEndpointSetHealthCheckMarksAndRestoresEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -259,6 +270,62 @@ func TestEndpointSetHealthCheckMarksAndRestoresEndpoint(t *testing.T) {
 			}
 		}
 		return false
+	})
+}
+
+func TestEndpointSetHealthCheckUsesDefaultClient(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{server.URL}, httpx.EndpointPolicy{
+		HealthCheck: httpx.EndpointHealthCheckPolicy{
+			Enabled:          true,
+			Interval:         time.Millisecond,
+			Timeout:          100 * time.Millisecond,
+			FailureThreshold: 1,
+			SuccessThreshold: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	endpoints.StartHealthCheck(nil, http.MethodGet, "/health")
+	defer endpoints.Close()
+
+	waitFor(t, func() bool {
+		candidates := endpoints.Candidates("/status")
+		return len(candidates) == 1 && candidates[0].URL == server.URL+"/status"
+	})
+}
+
+func TestEndpointSetHealthCheckMarksTransportError(t *testing.T) {
+	t.Parallel()
+
+	broken := httptest.NewServer(http.NotFoundHandler())
+	brokenURL := broken.URL
+	broken.Close()
+
+	endpoints, err := httpx.NewEndpointSetWithPolicy([]string{brokenURL}, httpx.EndpointPolicy{
+		HealthCheck: httpx.EndpointHealthCheckPolicy{
+			Enabled:          true,
+			Interval:         time.Millisecond,
+			Timeout:          100 * time.Millisecond,
+			FailureThreshold: 1,
+			SuccessThreshold: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
+	}
+	endpoints.StartHealthCheck(http.DefaultClient, http.MethodGet, "/health")
+	defer endpoints.Close()
+
+	waitFor(t, func() bool {
+		return len(endpoints.Candidates("/status")) == 0
 	})
 }
 

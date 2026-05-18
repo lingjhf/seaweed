@@ -134,6 +134,40 @@ func TestCreateWithUploadSendsBodyAndHeaders(t *testing.T) {
 	}
 }
 
+func TestCreateResolvesAbsoluteLocation(t *testing.T) {
+	t.Parallel()
+
+	var deletePath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			w.Header().Set("Location", "http://"+r.Host+"/.tus/.uploads/absolute")
+			w.WriteHeader(http.StatusCreated)
+		case http.MethodDelete:
+			deletePath = r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	upload, err := client.Create(context.Background(), "/file", tus.CreateOptions{Size: 1})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if upload.Location != server.URL+"/.tus/.uploads/absolute" {
+		t.Fatalf("Location = %q, want absolute server location", upload.Location)
+	}
+	if err := client.Terminate(context.Background(), upload.Location); err != nil {
+		t.Fatalf("Terminate() error = %v", err)
+	}
+	if deletePath != "/.tus/.uploads/absolute" {
+		t.Fatalf("DELETE path = %q, want /.tus/.uploads/absolute", deletePath)
+	}
+}
+
 func TestHeadPatchAndTerminate(t *testing.T) {
 	t.Parallel()
 
@@ -418,6 +452,17 @@ func TestValidationAndResponseErrors(t *testing.T) {
 	if _, err := tus.New(tus.Config{}); err == nil {
 		t.Fatal("tus.New() error = nil, want missing filer urls error")
 	}
+	if _, err := tus.New(tus.Config{FilerURLs: []string{"relative"}}); err == nil {
+		t.Fatal("tus.New() error = nil, want invalid filer url error")
+	}
+	if _, err := tus.New(tus.Config{
+		FilerURLs: []string{"http://example.test"},
+		EndpointPolicy: tus.EndpointPolicy{
+			Mode: "random",
+		},
+	}); err == nil {
+		t.Fatal("tus.New() error = nil, want invalid endpoint policy error")
+	}
 	client, err := tus.New(tus.Config{
 		FilerURLs:  []string{"http://example.test"},
 		HTTPClient: http.DefaultClient,
@@ -438,6 +483,18 @@ func TestValidationAndResponseErrors(t *testing.T) {
 
 func TestInvalidHeadersAndStatuses(t *testing.T) {
 	t.Parallel()
+
+	t.Run("options non-ok status", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "not allowed", http.StatusMethodNotAllowed)
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server)
+		if _, err := client.Options(context.Background()); err == nil {
+			t.Fatal("Options() error = nil, want status error")
+		}
+	})
 
 	t.Run("options invalid max size", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -478,6 +535,19 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}
 	})
 
+	t.Run("create with upload invalid location", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Location", "relative")
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server)
+		if _, err := client.CreateWithUpload(context.Background(), "/file", strings.NewReader("x"), tus.CreateOptions{Size: 1}); err == nil {
+			t.Fatal("CreateWithUpload() error = nil, want invalid location error")
+		}
+	})
+
 	t.Run("create with upload non-created status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request", http.StatusBadRequest)
@@ -487,6 +557,19 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		client := newTestClient(t, server)
 		if _, err := client.CreateWithUpload(context.Background(), "/file", strings.NewReader("x"), tus.CreateOptions{Size: 1}); err == nil {
 			t.Fatal("CreateWithUpload() error = nil, want status error")
+		}
+	})
+
+	t.Run("head missing upload offset", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Upload-Length", "1")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server)
+		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc"); err == nil {
+			t.Fatal("Head() error = nil, want missing offset error")
 		}
 	})
 
@@ -500,6 +583,19 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		client := newTestClient(t, server)
 		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc"); err == nil {
 			t.Fatal("Head() error = nil, want missing length error")
+		}
+	})
+
+	t.Run("patch invalid upload offset", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Upload-Offset", "NaN")
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server)
+		if _, err := client.Patch(context.Background(), "/.tus/.uploads/abc", 0, strings.NewReader("x"), 1); err == nil {
+			t.Fatal("Patch() error = nil, want invalid offset error")
 		}
 	})
 }

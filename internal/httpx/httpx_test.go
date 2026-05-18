@@ -228,6 +228,32 @@ func TestDoRetriesRetryableResponses(t *testing.T) {
 	}
 }
 
+func TestDoReturnsContextErrorDuringRetryWait(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: server.Client(),
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 2,
+			Wait:        time.Hour,
+		},
+	})
+	_, err := client.Do(ctx, httpx.Request{
+		Method: http.MethodGet,
+		URL:    server.URL,
+	})
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Do() error = %v, want context deadline", err)
+	}
+}
+
 func TestDoDoesNotRetryNonRetryableMethod(t *testing.T) {
 	t.Parallel()
 
@@ -258,6 +284,35 @@ func TestDoDoesNotRetryNonRetryableMethod(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("calls = %d, want 1", calls)
+	}
+}
+
+func TestDoEndpointReturnsLastTransportError(t *testing.T) {
+	t.Parallel()
+
+	first := httptest.NewServer(http.NotFoundHandler())
+	firstURL := first.URL
+	first.Close()
+	second := httptest.NewServer(http.NotFoundHandler())
+	secondURL := second.URL
+	second.Close()
+
+	endpoints, err := httpx.NewEndpointSet([]string{firstURL, secondURL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: http.DefaultClient,
+		Retry: httpx.RetryPolicy{
+			MaxAttempts: 1,
+			Wait:        time.Nanosecond,
+		},
+	})
+	if _, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}); err == nil {
+		t.Fatal("DoEndpoint() error = nil, want transport error")
 	}
 }
 
@@ -652,6 +707,28 @@ func TestDecodeJSONEndpoint(t *testing.T) {
 	}
 	if !out.OK {
 		t.Fatal("DecodeJSONEndpoint() decoded OK = false, want true")
+	}
+}
+
+func TestDecodeJSONEndpointReturnsDecodeError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("{"))
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	err = client.DecodeJSONEndpoint(context.Background(), endpoints, "/broken", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}, &map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("DecodeJSONEndpoint() error = %v, want decode error", err)
 	}
 }
 

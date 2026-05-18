@@ -217,6 +217,17 @@ func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	if _, err := volume.New(volume.Config{}); err == nil {
 		t.Fatal("volume.New() error = nil, want base urls error")
 	}
+	if _, err := volume.New(volume.Config{BaseURLs: []string{"relative"}}); err == nil {
+		t.Fatal("volume.New() error = nil, want invalid base url error")
+	}
+	if _, err := volume.New(volume.Config{
+		BaseURLs: []string{"http://example.test"},
+		EndpointPolicy: volume.EndpointPolicy{
+			Mode: "random",
+		},
+	}); err == nil {
+		t.Fatal("volume.New() error = nil, want invalid endpoint policy error")
+	}
 
 	clientWithBaseURL, err := volume.New(volume.Config{
 		BaseURLs:   []string{"http://example.test"},
@@ -227,6 +238,9 @@ func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	}
 	if _, err := clientWithBaseURL.Get(context.Background(), "", volume.GetOptions{}); err == nil {
 		t.Fatal("Get() error = nil, want file id error")
+	}
+	if _, err := clientWithBaseURL.Put(context.Background(), "", stringsReader("body"), volume.PutOptions{}); err == nil {
+		t.Fatal("Put() error = nil, want file id error")
 	}
 	if _, err := clientWithBaseURL.Head(context.Background(), ""); err == nil {
 		t.Fatal("Head() error = nil, want file id error")

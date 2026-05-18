@@ -82,6 +82,24 @@ func TestNewRequiresMasterClient(t *testing.T) {
 	if _, err := blob.New(blob.Config{}); err == nil {
 		t.Fatal("blob.New() error = nil, want master client error")
 	}
+
+	masterServer := httptest.NewServer(http.NotFoundHandler())
+	defer masterServer.Close()
+	masterClient, err := master.New(master.Config{
+		BaseURLs:   []string{masterServer.URL},
+		HTTPClient: masterServer.Client(),
+	})
+	if err != nil {
+		t.Fatalf("master.New() error = %v", err)
+	}
+	if _, err := blob.New(blob.Config{
+		Master: masterClient,
+		EndpointPolicy: blob.EndpointPolicy{
+			Mode: "random",
+		},
+	}); err == nil {
+		t.Fatal("blob.New() error = nil, want invalid endpoint policy error")
+	}
 }
 
 func TestPutUsesPublicURLAndAssignOptions(t *testing.T) {
@@ -176,6 +194,41 @@ func TestPutValidatesAssignResponse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPutReturnsAssignAndUploadErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("assign error", func(t *testing.T) {
+		masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "master busy", http.StatusServiceUnavailable)
+		}))
+		defer masterServer.Close()
+
+		client := newTestClient(t, masterServer, false)
+		if _, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{}); err == nil {
+			t.Fatal("Put() error = nil, want assign error")
+		}
+	})
+
+	t.Run("upload error", func(t *testing.T) {
+		volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "volume busy", http.StatusServiceUnavailable)
+		}))
+		defer volumeServer.Close()
+		masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"fid": "9,abc",
+				"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+			})
+		}))
+		defer masterServer.Close()
+
+		client := newTestClient(t, masterServer, false)
+		if _, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{}); err == nil {
+			t.Fatal("Put() error = nil, want upload error")
+		}
+	})
 }
 
 func TestGetHeadDeleteLookupCacheAndInvalidate(t *testing.T) {
@@ -314,6 +367,40 @@ func TestGetFailsOverAcrossLookupLocations(t *testing.T) {
 	}
 	if firstCalls.Load() != 1 || secondCalls.Load() != 1 {
 		t.Fatalf("volume calls = %d/%d, want 1/1", firstCalls.Load(), secondCalls.Load())
+	}
+}
+
+func TestLookupUsesPublicURLAndDeduplicatesLocations(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte("public"))
+	}))
+	defer volumeServer.Close()
+
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		location := strings.TrimPrefix(volumeServer.URL, "http://")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"locations": []map[string]string{
+				{
+					"url":       "127.0.0.1:1",
+					"publicUrl": location,
+				},
+				{
+					"url":       "127.0.0.1:2",
+					"publicUrl": location,
+				},
+			},
+		})
+	}))
+	defer masterServer.Close()
+
+	client := newTestClient(t, masterServer, true)
+	assertGetBody(t, client, "9,abc", "public")
+	if calls.Load() != 1 {
+		t.Fatalf("volume calls = %d, want one deduplicated endpoint", calls.Load())
 	}
 }
 

@@ -445,6 +445,17 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	if _, err := filer.New(filer.Config{}); err == nil {
 		t.Fatal("filer.New() error = nil, want base urls error")
 	}
+	if _, err := filer.New(filer.Config{BaseURLs: []string{"relative"}}); err == nil {
+		t.Fatal("filer.New() error = nil, want invalid base url error")
+	}
+	if _, err := filer.New(filer.Config{
+		BaseURLs: []string{"http://example.test"},
+		EndpointPolicy: filer.EndpointPolicy{
+			Mode: "random",
+		},
+	}); err == nil {
+		t.Fatal("filer.New() error = nil, want invalid endpoint policy error")
+	}
 
 	clientWithBaseURL, err := filer.New(filer.Config{
 		BaseURLs:   []string{"http://example.test"},
@@ -488,6 +499,43 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 		t.Fatal("Delete() error = nil, want status error")
 	} else {
 		assertHTTPStatus(t, err, http.StatusNotFound)
+	}
+}
+
+func TestPathValidationForMutatingMethods(t *testing.T) {
+	t.Parallel()
+
+	client, err := filer.New(filer.Config{
+		BaseURLs:   []string{"http://example.test"},
+		HTTPClient: http.DefaultClient,
+	})
+	if err != nil {
+		t.Fatalf("filer.New() error = %v", err)
+	}
+
+	if _, err := client.Put(context.Background(), "", strings.NewReader("x"), filer.WriteOptions{}); err == nil {
+		t.Fatal("Put() error = nil, want path error")
+	}
+	if _, err := client.Append(context.Background(), "", strings.NewReader("x"), filer.AppendOptions{}); err == nil {
+		t.Fatal("Append() error = nil, want path error")
+	}
+	if err := client.Copy(context.Background(), "/src", ""); err == nil {
+		t.Fatal("Copy() error = nil, want destination path error")
+	}
+	if err := client.Move(context.Background(), "/src", ""); err == nil {
+		t.Fatal("Move() error = nil, want destination path error")
+	}
+	if err := client.SetTags(context.Background(), "", map[string]string{"Owner": "sdk"}); err == nil {
+		t.Fatal("SetTags() error = nil, want path error")
+	}
+	if err := client.DeleteTags(context.Background(), "", "Owner"); err == nil {
+		t.Fatal("DeleteTags() error = nil, want path error")
+	}
+	if _, err := client.Stat(context.Background(), "", filer.StatOptions{}); err == nil {
+		t.Fatal("Stat() error = nil, want path error")
+	}
+	if err := client.Delete(context.Background(), "", filer.DeleteOptions{}); err == nil {
+		t.Fatal("Delete() error = nil, want path error")
 	}
 }
 
