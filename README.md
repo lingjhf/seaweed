@@ -7,7 +7,7 @@ This project is in the `0.x` development line. Public APIs can change between mi
 ## Features
 
 - Master client: assign, lookup, status, health, volume management helpers.
-- Volume client: direct put, get, head, delete, status.
+- Volume client: direct put, get, head, delete, typed status.
 - Blob client: assign/lookup plus volume upload, read failover, head, delete.
 - Filer client: put, append, multipart upload, get, head, stat, list, mkdir, delete, copy, move, tagging.
 - TUS client: native SeaweedFS resumable upload support for `/.tus`.
@@ -343,6 +343,20 @@ if err != nil {
     return err
 }
 fmt.Println(volumeStatus.Volumes.Free, volumeStatus.Volumes.Max)
+
+volumeClient, err := volume.New(volume.Config{
+    BaseURLs:   []string{"http://127.0.0.1:8080"},
+    HTTPClient: httpClient,
+})
+if err != nil {
+    return err
+}
+
+serverStatus, err := volumeClient.Status(ctx)
+if err != nil {
+    return err
+}
+fmt.Println(serverStatus.Version, len(serverStatus.Volumes))
 ```
 
 ### Error Handling

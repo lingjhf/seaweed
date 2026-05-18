@@ -172,6 +172,44 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/status":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"Version": "test",
+				"DiskStatuses": []map[string]any{
+					{
+						"dir":          "/data",
+						"all":          1000,
+						"used":         400,
+						"free":         600,
+						"percent_free": 60.5,
+						"percent_used": 39.5,
+						"disk_type":    "ssd",
+					},
+				},
+				"Volumes": []map[string]any{
+					{
+						"Id":   3,
+						"Size": 2048,
+						"ReplicaPlacement": map[string]any{
+							"SameRackCount":       1,
+							"DiffRackCount":       2,
+							"DiffDataCenterCount": 3,
+						},
+						"Ttl": map[string]any{
+							"Count": 7,
+							"Unit":  1,
+						},
+						"DiskType":          "ssd",
+						"DiskId":            2,
+						"Collection":        "photos",
+						"Version":           3,
+						"FileCount":         4,
+						"DeleteCount":       1,
+						"DeletedByteCount":  8,
+						"ReadOnly":          true,
+						"CompactRevision":   5,
+						"ModifiedAtSecond":  1612388794,
+						"RemoteStorageName": "remote",
+						"RemoteStorageKey":  "key",
+					},
+				},
 			})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -194,8 +232,37 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
-	if status["Version"] != "test" {
-		t.Fatalf("Status()[Version] = %v, want test", status["Version"])
+	if status.Version != "test" {
+		t.Fatalf("Status().Version = %q, want test", status.Version)
+	}
+	if len(status.DiskStatuses) != 1 {
+		t.Fatalf("Status().DiskStatuses len = %d, want 1", len(status.DiskStatuses))
+	}
+	disk := status.DiskStatuses[0]
+	if disk.Dir != "/data" || disk.All != 1000 || disk.Used != 400 || disk.Free != 600 || disk.DiskType != "ssd" {
+		t.Fatalf("Status().DiskStatuses[0] = %+v, want decoded disk status", disk)
+	}
+	if disk.PercentFree != 60.5 || disk.PercentUsed != 39.5 {
+		t.Fatalf("Status().DiskStatuses[0] percentages = %f/%f, want 60.5/39.5", disk.PercentFree, disk.PercentUsed)
+	}
+	if len(status.Volumes) != 1 {
+		t.Fatalf("Status().Volumes len = %d, want 1", len(status.Volumes))
+	}
+	vol := status.Volumes[0]
+	if vol.ID != 3 || vol.Size != 2048 || vol.DiskID != 2 || vol.Collection != "photos" || vol.Version != 3 || !vol.ReadOnly {
+		t.Fatalf("Status().Volumes[0] = %+v, want decoded volume", vol)
+	}
+	if vol.ReplicaPlacement.SameRackCount != 1 || vol.ReplicaPlacement.DiffRackCount != 2 || vol.ReplicaPlacement.DiffDataCenterCount != 3 {
+		t.Fatalf("Status().Volumes[0].ReplicaPlacement = %+v, want decoded placement", vol.ReplicaPlacement)
+	}
+	if vol.TTL.Count != 7 || vol.TTL.Unit != 1 {
+		t.Fatalf("Status().Volumes[0].TTL = %+v, want decoded ttl", vol.TTL)
+	}
+	if vol.FileCount != 4 || vol.DeleteCount != 1 || vol.DeletedByteCount != 8 || vol.CompactRevision != 5 || vol.ModifiedAtSecond != 1612388794 {
+		t.Fatalf("Status().Volumes[0] counters = %+v, want decoded counters", vol)
+	}
+	if vol.RemoteStorageName != "remote" || vol.RemoteStorageKey != "key" {
+		t.Fatalf("Status().Volumes[0] remote storage = %q/%q, want remote/key", vol.RemoteStorageName, vol.RemoteStorageKey)
 	}
 	if err := client.Health(context.Background()); err != nil {
 		t.Fatalf("Health() error = %v", err)

@@ -2,5 +2,5 @@
 //
 // Use this package when a file ID and target volume endpoint are already known.
 // The root blob client handles assignment and lookup when those steps should be
-// managed automatically.
+// managed automatically. Status returns typed local disk and volume metadata.
 package volume

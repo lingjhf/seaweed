@@ -53,6 +53,57 @@ type GetOptions struct {
 	Range string
 }
 
+// StatusResponse describes volume server status returned by /status.
+type StatusResponse struct {
+	DiskStatuses []DiskStatus `json:"DiskStatuses"`
+	Version      string       `json:"Version"`
+	Volumes      []VolumeInfo `json:"Volumes"`
+}
+
+// DiskStatus describes one local disk used by a volume server.
+type DiskStatus struct {
+	Dir         string  `json:"dir"`
+	All         uint64  `json:"all"`
+	Used        uint64  `json:"used"`
+	Free        uint64  `json:"free"`
+	PercentFree float64 `json:"percent_free"`
+	PercentUsed float64 `json:"percent_used"`
+	DiskType    string  `json:"disk_type"`
+}
+
+// VolumeInfo describes one local volume on a volume server.
+type VolumeInfo struct {
+	ID                int                    `json:"Id"`
+	Size              uint64                 `json:"Size"`
+	ReplicaPlacement  VolumeReplicaPlacement `json:"ReplicaPlacement"`
+	TTL               VolumeTTL              `json:"Ttl"`
+	DiskType          string                 `json:"DiskType"`
+	DiskID            int                    `json:"DiskId"`
+	Collection        string                 `json:"Collection"`
+	Version           int                    `json:"Version"`
+	FileCount         int                    `json:"FileCount"`
+	DeleteCount       int                    `json:"DeleteCount"`
+	DeletedByteCount  uint64                 `json:"DeletedByteCount"`
+	ReadOnly          bool                   `json:"ReadOnly"`
+	CompactRevision   uint32                 `json:"CompactRevision"`
+	ModifiedAtSecond  int64                  `json:"ModifiedAtSecond"`
+	RemoteStorageName string                 `json:"RemoteStorageName"`
+	RemoteStorageKey  string                 `json:"RemoteStorageKey"`
+}
+
+// VolumeReplicaPlacement describes one volume's replication strategy.
+type VolumeReplicaPlacement struct {
+	SameRackCount       int `json:"SameRackCount"`
+	DiffRackCount       int `json:"DiffRackCount"`
+	DiffDataCenterCount int `json:"DiffDataCenterCount"`
+}
+
+// VolumeTTL describes one volume's time-to-live policy.
+type VolumeTTL struct {
+	Count int `json:"Count"`
+	Unit  int `json:"Unit"`
+}
+
 // New creates a volume client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
@@ -156,14 +207,14 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
-// Status returns raw volume server status data.
-func (c *Client) Status(ctx context.Context) (map[string]any, error) {
-	out := map[string]any{}
+// Status returns volume server status data.
+func (c *Client) Status(ctx context.Context) (*StatusResponse, error) {
+	var out StatusResponse
 	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
 		ContentLength: -1,
 	}, &out)
-	return out, err
+	return &out, err
 }
 
 // Health checks the volume server status endpoint.

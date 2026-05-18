@@ -13,6 +13,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 
 ### Added
 
+- Volume server status now returns typed disk and volume metadata.
 - Master directory status now returns typed topology metadata.
 - Master volume status now returns typed volume placement metadata.
 - Endpoint policy support for failover, round-robin, health checks, and circuit breakers.
