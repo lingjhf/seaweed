@@ -37,6 +37,7 @@ client, err := seaweed.New(seaweed.Config{
 if err != nil {
     return err
 }
+defer client.Close()
 ```
 
 See `examples/basic` and `examples/s3`.
@@ -127,7 +128,7 @@ fmt.Println(string(body))
 
 ### Filer Files
 
-Use the filer client for path-based file operations, metadata, directories, and tags.
+Use the filer client for path-based file operations, metadata, directories, and tags. `ListPage` maps to one SeaweedFS filer page; use `Walk` when you want the SDK to follow `lastFileName` pagination for you.
 
 ```go
 ctx := context.Background()
@@ -144,18 +145,32 @@ if err != nil {
     return err
 }
 
+head, err := client.Filer().Head(ctx, "/sdk/hello.txt")
+if err != nil {
+    return err
+}
+fmt.Println(head.Header.Get("Seaweed-Owner"), head.Tags["Owner"])
+
 entry, err := client.Filer().Stat(ctx, "/sdk/hello.txt", filer.StatOptions{})
 if err != nil {
     return err
 }
 fmt.Println(entry.FullPath, entry.FileSize)
 
-list, err := client.Filer().ListPage(ctx, "/sdk", filer.ListOptions{Limit: 100})
+page, err := client.Filer().ListPage(ctx, "/sdk", filer.ListOptions{Limit: 100})
 if err != nil {
     return err
 }
-for _, entry := range list.Entries {
+for _, entry := range page.Entries {
     fmt.Println(entry.FullPath)
+}
+
+err = client.Filer().Walk(ctx, "/sdk", filer.WalkOptions{Limit: 100}, func(entry filer.Entry) error {
+    fmt.Println(entry.FullPath)
+    return nil
+})
+if err != nil {
+    return err
 }
 ```
 

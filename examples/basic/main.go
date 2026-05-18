@@ -19,6 +19,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer client.Close()
 
 	_, err = client.Filer().Put(ctx, "/sdk/hello.txt", strings.NewReader("hello seaweedfs"), filer.WriteOptions{
 		ContentType:   "text/plain",
