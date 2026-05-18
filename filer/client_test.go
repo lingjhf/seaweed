@@ -146,7 +146,7 @@ func TestListPageBuildsJSONRequest(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Path": "/docs",
 			"Entries": []map[string]any{
-				{"FullPath": "/docs/report.txt", "FileSize": 5},
+				{"FullPath": "/docs/report.txt", "FileSize": 5, "Uid": 1001, "Gid": 1002},
 			},
 			"Limit":        2,
 			"LastFileName": "report.txt",
@@ -166,6 +166,9 @@ func TestListPageBuildsJSONRequest(t *testing.T) {
 	}
 	if len(resp.Entries) != 1 {
 		t.Fatalf("Entries len = %d, want 1", len(resp.Entries))
+	}
+	if resp.Entries[0].UID != 1001 || resp.Entries[0].GID != 1002 {
+		t.Fatalf("entry UID/GID = %d/%d, want 1001/1002", resp.Entries[0].UID, resp.Entries[0].GID)
 	}
 }
 
@@ -300,6 +303,8 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 				"Mtime":    "2026-05-18T12:00:00Z",
 				"Crtime":   "2026-05-18T11:00:00Z",
 				"Mode":     420,
+				"Uid":      1001,
+				"Gid":      1002,
 				"DiskType": "ssd",
 				"Md5":      "checksum",
 				"FileSize": 5,
@@ -380,6 +385,9 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	}
 	if entry.Rdev != 7 || entry.Inode != 9 || entry.Quota != 11 {
 		t.Fatalf("Stat() numeric metadata = %+v", entry)
+	}
+	if entry.UID != 1001 || entry.GID != 1002 {
+		t.Fatalf("Stat() UID/GID = %d/%d, want 1001/1002", entry.UID, entry.GID)
 	}
 	if entry.Chunks[0].FID.VolumeID != 7 || entry.Chunks[0].FID.FileKey != 123 || entry.Chunks[0].FID.Cookie != 456 {
 		t.Fatalf("Stat() chunk fid = %+v", entry.Chunks[0].FID)

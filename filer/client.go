@@ -144,6 +144,8 @@ type Entry struct {
 	DiskType        string            `json:"DiskType"`
 	UserName        string            `json:"UserName"`
 	GroupNames      []string          `json:"GroupNames"`
+	UID             int64             `json:"Uid"`
+	GID             int64             `json:"Gid"`
 	SymlinkTarget   string            `json:"SymlinkTarget"`
 	MD5             string            `json:"Md5"`
 	FileSize        int64             `json:"FileSize"`
