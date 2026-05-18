@@ -1,19 +1,13 @@
 # Changelog
 
-This project is in the `0.x` development line. Minor releases can include breaking API changes while the SDK is being shaped against SeaweedFS behavior.
+This project is in the `0.x` development line. Public APIs can change while the SDK is being shaped against SeaweedFS behavior.
 
 ## Unreleased
 
-### Breaking Changes
+### Development API Changes
 
-- Replaced native single-endpoint fields with endpoint lists for master, volume, filer, and TUS clients.
-- Replaced `S3URL` and `IAMURL` with `S3URLs` and `IAMURLs`.
-- Redesigned the Filer resource API:
-  - `filer.PutOptions` is now `filer.WriteOptions`.
-  - `filer.WriteResponse` is now `filer.WriteResult`.
-  - `Client.Append` now accepts `filer.AppendOptions`.
-  - `Client.Head` now returns `*filer.HeadResult`.
-  - `Client.List` is now `Client.ListPage`.
+- Endpoint configuration uses endpoint lists for master, volume, filer, TUS, S3, and IAM clients.
+- Filer uses a resource-operation API with explicit write results, append options, head results, and page-based listing.
 
 ### Added
 
