@@ -832,6 +832,88 @@ func TestCheckStatusEndpoint(t *testing.T) {
 	}
 }
 
+func TestCheckStatusEndpointSuccessfulBodies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "empty body",
+		},
+		{
+			name: "text body",
+			body: "ok",
+		},
+		{
+			name: "json without error",
+			body: `{"ok":true}`,
+		},
+		{
+			name: "json empty error",
+			body: `{"error":""}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+			endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+			if err != nil {
+				t.Fatalf("NewEndpointSet() error = %v", err)
+			}
+			client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+			err = client.CheckStatusEndpoint(context.Background(), endpoints, "/delete", httpx.Request{
+				Method:        http.MethodDelete,
+				ContentLength: -1,
+			}, http.StatusOK)
+			if err != nil {
+				t.Fatalf("CheckStatusEndpoint() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestCheckStatusEndpointReturnsAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"error":"delete failed"}`))
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	err = client.CheckStatusEndpoint(context.Background(), endpoints, "/delete", httpx.Request{
+		Method:        http.MethodDelete,
+		ContentLength: -1,
+	}, http.StatusOK)
+	if err == nil {
+		t.Fatal("CheckStatusEndpoint() error = nil, want API error")
+	}
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != "delete failed" {
+		t.Fatalf("APIError.Message = %q, want delete failed", apiErr.Message)
+	}
+	if apiErr.URL != server.URL+"/delete" {
+		t.Fatalf("APIError.URL = %q, want %s", apiErr.URL, server.URL+"/delete")
+	}
+}
+
 func TestCheckStatusEndpointReturnsHTTPError(t *testing.T) {
 	t.Parallel()
 
@@ -978,6 +1060,34 @@ func TestCheckStatus(t *testing.T) {
 				t.Fatalf("CheckStatus() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestCheckStatusReturnsAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"error":"terminate failed"}`))
+	}))
+	defer server.Close()
+
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+	err := client.CheckStatus(context.Background(), httpx.Request{
+		Method: http.MethodDelete,
+		URL:    server.URL,
+	}, http.StatusOK)
+	if err == nil {
+		t.Fatal("CheckStatus() error = nil, want API error")
+	}
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != "terminate failed" {
+		t.Fatalf("APIError.Message = %q, want terminate failed", apiErr.Message)
+	}
+	if apiErr.URL != server.URL {
+		t.Fatalf("APIError.URL = %q, want %s", apiErr.URL, server.URL)
 	}
 }
 

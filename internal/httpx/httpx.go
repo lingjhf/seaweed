@@ -220,7 +220,7 @@ func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...i
 
 	for _, status := range expected {
 		if resp.StatusCode == status {
-			return nil
+			return checkStatusResponse(resp, request)
 		}
 	}
 	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
@@ -236,7 +236,7 @@ func (c *Client) CheckStatusEndpoint(ctx context.Context, endpoints *EndpointSet
 
 	for _, status := range expected {
 		if resp.StatusCode == status {
-			return nil
+			return checkStatusResponse(resp, request)
 		}
 	}
 	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
@@ -306,6 +306,33 @@ func decodeJSONResponse(resp *http.Response, request Request, out any) error {
 		}
 		return fmt.Errorf("decode response: %w", io.EOF)
 	}
+	if apiErr := apiErrorFromBody(resp, request, body); apiErr != nil {
+		return apiErr
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func checkStatusResponse(resp *http.Response, request Request) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if apiErr := apiErrorFromBody(resp, request, bytes.TrimSpace(body)); apiErr != nil {
+		return apiErr
+	}
+	return nil
+}
+
+func apiErrorFromBody(resp *http.Response, request Request, body []byte) *APIError {
+	if len(body) == 0 {
+		return nil
+	}
 	var apiError struct {
 		Error string `json:"error"`
 	}
@@ -315,12 +342,6 @@ func decodeJSONResponse(resp *http.Response, request Request, out any) error {
 			URL:     responseURL(resp, request.URL),
 			Message: apiError.Error,
 		}
-	}
-	if out == nil {
-		return nil
-	}
-	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
 }
