@@ -191,7 +191,7 @@ func TestUploadMultipartBuildsStreamingRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	resp, err := client.UploadMultipart(context.Background(), "/uploads", "report.txt", strings.NewReader("hello multipart"), filer.MultipartUploadOptions{
+	resp, err := client.UploadMultipart(context.Background(), "/uploads/", strings.NewReader("hello multipart"), filer.MultipartUploadOptions{
 		Collection:         "photos",
 		Replication:        "001",
 		TTL:                "3d",
@@ -200,6 +200,7 @@ func TestUploadMultipartBuildsStreamingRequest(t *testing.T) {
 		Fsync:              true,
 		SaveInside:         true,
 		SkipCheckParentDir: true,
+		Filename:           "report.txt",
 		FileContentType:    "text/plain",
 		FieldName:          "asset",
 		SeaweedHeaders: map[string]string{
@@ -211,6 +212,37 @@ func TestUploadMultipartBuildsStreamingRequest(t *testing.T) {
 	}
 	if resp.Name != "report.txt" || resp.Size != int64(len("hello multipart")) || resp.ETag != "etag" {
 		t.Fatalf("UploadMultipart() = %+v, want decoded write result", resp)
+	}
+}
+
+func TestUploadMultipartFilePathUsesBaseName(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/uploads/report.txt" {
+			t.Fatalf("path = %s, want /uploads/report.txt", r.URL.Path)
+		}
+		multipartReader, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader() error = %v", err)
+		}
+		part, err := multipartReader.NextPart()
+		if err != nil {
+			t.Fatalf("NextPart() error = %v", err)
+		}
+		if part.FileName() != "report.txt" {
+			t.Fatalf("FileName = %q, want report.txt", part.FileName())
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name": "report.txt",
+			"size": len("hello multipart"),
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	if _, err := client.UploadMultipart(context.Background(), "/uploads/report.txt", strings.NewReader("hello multipart"), filer.MultipartUploadOptions{}); err != nil {
+		t.Fatalf("UploadMultipart() error = %v", err)
 	}
 }
 
@@ -240,7 +272,7 @@ func TestUploadMultipartDefaultsFieldNameAndContentType(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	if _, err := client.UploadMultipart(context.Background(), "/uploads", "default.bin", strings.NewReader("data"), filer.MultipartUploadOptions{}); err != nil {
+	if _, err := client.UploadMultipart(context.Background(), "/uploads/default.bin", strings.NewReader("data"), filer.MultipartUploadOptions{}); err != nil {
 		t.Fatalf("UploadMultipart() error = %v", err)
 	}
 }
@@ -267,7 +299,7 @@ func TestWriteRequestsReturnJSONAPIErrors(t *testing.T) {
 		{
 			name: "upload multipart",
 			call: func(client *filer.Client) (*filer.WriteResult, error) {
-				return client.UploadMultipart(context.Background(), "/uploads", "report.txt", strings.NewReader("x"), filer.MultipartUploadOptions{})
+				return client.UploadMultipart(context.Background(), "/uploads/report.txt", strings.NewReader("x"), filer.MultipartUploadOptions{})
 			},
 		},
 	}
@@ -779,13 +811,13 @@ func TestPathValidationForMutatingMethods(t *testing.T) {
 	if _, err := client.Append(context.Background(), "", strings.NewReader("x"), filer.AppendOptions{}); err == nil {
 		t.Fatal("Append() error = nil, want path error")
 	}
-	if _, err := client.UploadMultipart(context.Background(), "", "file.txt", strings.NewReader("x"), filer.MultipartUploadOptions{}); err == nil {
+	if _, err := client.UploadMultipart(context.Background(), "", strings.NewReader("x"), filer.MultipartUploadOptions{Filename: "file.txt"}); err == nil {
 		t.Fatal("UploadMultipart() error = nil, want path error")
 	}
-	if _, err := client.UploadMultipart(context.Background(), "/uploads", "", strings.NewReader("x"), filer.MultipartUploadOptions{}); err == nil {
+	if _, err := client.UploadMultipart(context.Background(), "/uploads/", strings.NewReader("x"), filer.MultipartUploadOptions{}); err == nil {
 		t.Fatal("UploadMultipart() error = nil, want filename error")
 	}
-	if _, err := client.UploadMultipart(context.Background(), "/uploads", "file.txt", nil, filer.MultipartUploadOptions{}); err == nil {
+	if _, err := client.UploadMultipart(context.Background(), "/uploads/file.txt", nil, filer.MultipartUploadOptions{}); err == nil {
 		t.Fatal("UploadMultipart() error = nil, want body error")
 	}
 	if err := client.Copy(context.Background(), "/src", ""); err == nil {

@@ -47,7 +47,7 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 	if err := client.Filer().Mkdir(ctx, "/advanced/uploads"); err != nil {
 		t.Fatalf("Mkdir(upload dir) error = %v", err)
 	}
-	_, err = client.Filer().UploadMultipart(ctx, "/advanced/uploads", "multipart.txt", strings.NewReader("multipart-data"), filer.MultipartUploadOptions{
+	_, err = client.Filer().UploadMultipart(ctx, "/advanced/uploads/multipart.txt", strings.NewReader("multipart-data"), filer.MultipartUploadOptions{
 		FileContentType: "text/plain",
 		SeaweedHeaders: map[string]string{
 			"Origin": "multipart",

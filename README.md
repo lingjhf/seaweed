@@ -198,7 +198,7 @@ if err != nil {
     return err
 }
 
-_, err = client.Filer().UploadMultipart(ctx, "/sdk/uploads", "multipart.txt", strings.NewReader(data), filer.MultipartUploadOptions{
+_, err = client.Filer().UploadMultipart(ctx, "/sdk/uploads/multipart.txt", strings.NewReader(data), filer.MultipartUploadOptions{
     FileContentType: "text/plain",
     SeaweedHeaders: map[string]string{
         "Owner": "sdk",

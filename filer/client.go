@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -90,6 +91,7 @@ type MultipartUploadOptions struct {
 	Fsync              bool
 	SaveInside         bool
 	SkipCheckParentDir bool
+	Filename           string
 	FileContentType    string
 	FieldName          string
 	SeaweedHeaders     map[string]string
@@ -233,15 +235,16 @@ func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts A
 	return c.write(ctx, path, body, writeOptionsFromAppend(opts), "append")
 }
 
-// UploadMultipart uploads body to dirPath using a streaming multipart form.
-func (c *Client) UploadMultipart(ctx context.Context, dirPath string, filename string, body io.Reader, opts MultipartUploadOptions) (*WriteResult, error) {
-	if strings.TrimSpace(filename) == "" {
-		return nil, fmt.Errorf("filer: filename is required")
-	}
+// UploadMultipart uploads body to targetPath using a streaming multipart form.
+func (c *Client) UploadMultipart(ctx context.Context, targetPath string, body io.Reader, opts MultipartUploadOptions) (*WriteResult, error) {
 	if body == nil {
 		return nil, fmt.Errorf("filer: body is required")
 	}
-	resourcePath, err := c.resourcePath(ensureTrailingSlash(dirPath))
+	filename, err := multipartFilename(targetPath, opts.Filename)
+	if err != nil {
+		return nil, err
+	}
+	resourcePath, err := c.resourcePath(targetPath)
 	if err != nil {
 		return nil, err
 	}
@@ -586,6 +589,20 @@ func writeOptionsFromAppend(opts AppendOptions) WriteOptions {
 		SeaweedHeaders:     opts.SeaweedHeaders,
 		ContentLength:      opts.ContentLength,
 	}
+}
+
+func multipartFilename(targetPath string, configured string) (string, error) {
+	if strings.TrimSpace(configured) != "" {
+		return configured, nil
+	}
+	if strings.HasSuffix(targetPath, "/") {
+		return "", fmt.Errorf("filer: filename is required")
+	}
+	filename := path.Base(strings.TrimRight(targetPath, "/"))
+	if strings.TrimSpace(filename) == "" || filename == "." || filename == "/" {
+		return "", fmt.Errorf("filer: filename is required")
+	}
+	return filename, nil
 }
 
 func writeMultipartBody(pipeWriter *io.PipeWriter, multipartWriter *multipart.Writer, filename string, body io.Reader, opts MultipartUploadOptions) {
