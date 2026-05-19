@@ -300,6 +300,30 @@ func TestHTTPErrorResponses(t *testing.T) {
 	}
 }
 
+func TestDeleteReturnsStatusAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/3,abc" {
+			t.Fatalf("path = %q, want /3,abc", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "delete failed",
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.Delete(context.Background(), "3,abc")
+	if err == nil {
+		t.Fatal("Delete() error = nil, want API error")
+	}
+	assertAPIError(t, err, "delete failed")
+}
+
 func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	t.Parallel()
 

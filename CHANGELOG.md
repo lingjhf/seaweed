@@ -6,7 +6,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 
 ### Development API Changes
 
-- JSON responses with an `error` field now return `*seaweed.APIError` instead of exposing response `Error` fields.
+- JSON responses with an `error` field now return `*seaweed.APIError` instead of exposing response `Error` fields, including status-only operations that do not decode a success response body.
 - Filer write results no longer expose `Error`; write API failures are returned as errors.
 - Endpoint configuration uses endpoint lists for master, volume, filer, TUS, S3, and IAM clients.
 - Filer uses a resource-operation API with explicit write results, append options, head results, and page-based listing.

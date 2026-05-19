@@ -613,6 +613,92 @@ func TestCopyMoveAndTaggingRequests(t *testing.T) {
 	}
 }
 
+func TestStatusOnlyMethodsReturnAPIErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		path   string
+		method string
+		call   func(*filer.Client) error
+	}{
+		{
+			name:   "mkdir",
+			path:   "/docs/",
+			method: http.MethodPost,
+			call: func(client *filer.Client) error {
+				return client.Mkdir(context.Background(), "/docs")
+			},
+		},
+		{
+			name:   "copy",
+			path:   "/dst.txt",
+			method: http.MethodPost,
+			call: func(client *filer.Client) error {
+				return client.Copy(context.Background(), "/src.txt", "/dst.txt")
+			},
+		},
+		{
+			name:   "move",
+			path:   "/moved.txt",
+			method: http.MethodPost,
+			call: func(client *filer.Client) error {
+				return client.Move(context.Background(), "/dst.txt", "/moved.txt")
+			},
+		},
+		{
+			name:   "set tags",
+			path:   "/moved.txt",
+			method: http.MethodPut,
+			call: func(client *filer.Client) error {
+				return client.SetTags(context.Background(), "/moved.txt", map[string]string{"Owner": "sdk"})
+			},
+		},
+		{
+			name:   "delete tags",
+			path:   "/moved.txt",
+			method: http.MethodDelete,
+			call: func(client *filer.Client) error {
+				return client.DeleteTags(context.Background(), "/moved.txt", "Owner")
+			},
+		},
+		{
+			name:   "delete",
+			path:   "/docs/report.txt",
+			method: http.MethodDelete,
+			call: func(client *filer.Client) error {
+				return client.Delete(context.Background(), "/docs/report.txt", filer.DeleteOptions{})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tt.method {
+					t.Fatalf("method = %s, want %s", r.Method, tt.method)
+				}
+				if r.URL.Path != tt.path {
+					t.Fatalf("path = %q, want %q", r.URL.Path, tt.path)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"error": tt.name + " failed",
+				})
+			}))
+			defer server.Close()
+
+			client := newTestClient(t, server)
+			err := tt.call(client)
+			if err == nil {
+				t.Fatal("status method error = nil, want API error")
+			}
+			assertAPIError(t, err, tt.name+" failed")
+		})
+	}
+}
+
 func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	t.Parallel()
 

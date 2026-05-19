@@ -177,6 +177,60 @@ func TestClientReturnsJSONAPIErrors(t *testing.T) {
 	assertAPIError(t, err, "no writable volumes")
 }
 
+func TestClientStatusRequestsReturnAPIErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		path    string
+		call    func(*master.Client) error
+		message string
+	}{
+		{
+			name: "vacuum",
+			path: "/vol/vacuum",
+			call: func(client *master.Client) error {
+				return client.Vacuum(context.Background(), 0.35)
+			},
+			message: "vacuum failed",
+		},
+		{
+			name: "delete collection",
+			path: "/col/delete",
+			call: func(client *master.Client) error {
+				return client.DeleteCollection(context.Background(), "photos")
+			},
+			message: "delete collection failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Fatalf("method = %s, want GET", r.Method)
+				}
+				if r.URL.Path != tt.path {
+					t.Fatalf("path = %q, want %q", r.URL.Path, tt.path)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"error": tt.message,
+				})
+			}))
+			defer server.Close()
+
+			client := newTestClient(t, server)
+			err := tt.call(client)
+			if err == nil {
+				t.Fatal("status request error = nil, want API error")
+			}
+			assertAPIError(t, err, tt.message)
+		})
+	}
+}
+
 func TestClientStatusRequests(t *testing.T) {
 	t.Parallel()
 

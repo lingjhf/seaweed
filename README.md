@@ -404,7 +404,7 @@ See `CHANGELOG.md` and `RELEASE.md` before cutting a release.
 
 ## Notes
 
-- JSON responses with an `error` field are returned as `*seaweed.APIError`.
+- JSON responses with an `error` field are returned as `*seaweed.APIError`, including status-only operations such as delete, mkdir, and TUS termination.
 - Volume health checks use `/healthz`; use `Volume().Status(ctx)` for full disk and volume metadata.
 - S3/IAM uses AWS SDK for Go v2 and path-style S3 addressing.
 - IAM defaults to `S3URLs` because SeaweedFS embeds IAM in the S3 server by default.

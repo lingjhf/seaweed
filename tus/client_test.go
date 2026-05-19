@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/tus"
 )
 
@@ -222,6 +223,42 @@ func TestHeadPatchAndTerminate(t *testing.T) {
 	if err := client.Terminate(context.Background(), "/.tus/.uploads/abc"); err != nil {
 		t.Fatalf("Terminate() error = %v", err)
 	}
+}
+
+func TestTerminateReturnsStatusAPIError(t *testing.T) {
+	t.Parallel()
+
+	client, err := tus.New(tus.Config{
+		FilerURLs: []string{"http://filer.test"},
+		BasePath:  "/.tus",
+		HTTPClient: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %s, want DELETE", req.Method)
+				}
+				if req.URL.String() != "http://filer.test/.tus/.uploads/abc" {
+					t.Fatalf("url = %q, want http://filer.test/.tus/.uploads/abc", req.URL.String())
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     "204 No Content",
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"error":"terminate failed"}`)),
+					Request:    req,
+				}, nil
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("tus.New() error = %v", err)
+	}
+	defer client.Close()
+
+	err = client.Terminate(context.Background(), "/.tus/.uploads/abc")
+	if err == nil {
+		t.Fatal("Terminate() error = nil, want API error")
+	}
+	assertAPIError(t, err, "terminate failed")
 }
 
 func TestUploadChunksBody(t *testing.T) {
@@ -622,6 +659,23 @@ func newTestClient(t *testing.T, server *httptest.Server) *tus.Client {
 		t.Fatalf("tus.New() error = %v", err)
 	}
 	return client
+}
+
+func assertAPIError(t *testing.T, err error, want string) {
+	t.Helper()
+	var apiErr *httpx.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T, want *httpx.APIError", err)
+	}
+	if apiErr.Message != want {
+		t.Fatalf("APIError.Message = %q, want %q", apiErr.Message, want)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 type failingReadSeeker struct{}
