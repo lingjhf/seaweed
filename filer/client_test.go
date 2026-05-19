@@ -277,6 +277,210 @@ func TestUploadMultipartDefaultsFieldNameAndContentType(t *testing.T) {
 	}
 }
 
+func TestRequestsUsePerRequestAuthorization(t *testing.T) {
+	t.Parallel()
+
+	const requestAuth = "Bearer request-token"
+
+	tests := []struct {
+		name       string
+		wantMethod string
+		wantPath   string
+		call       func(context.Context, *filer.Client) error
+		respond    func(http.ResponseWriter)
+	}{
+		{
+			name:       "put",
+			wantMethod: http.MethodPut,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.Put(ctx, "/docs/report.txt", strings.NewReader("x"), filer.WriteOptions{
+					ContentLength: 1,
+					Authorization: requestAuth,
+				})
+				return err
+			},
+			respond: writeResultResponse("report.txt", 1),
+		},
+		{
+			name:       "append",
+			wantMethod: http.MethodPut,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.Append(ctx, "/docs/report.txt", strings.NewReader("x"), filer.AppendOptions{
+					ContentLength: 1,
+					Authorization: requestAuth,
+				})
+				return err
+			},
+			respond: writeResultResponse("report.txt", 1),
+		},
+		{
+			name:       "upload multipart",
+			wantMethod: http.MethodPost,
+			wantPath:   "/uploads/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.UploadMultipart(ctx, "/uploads/report.txt", strings.NewReader("x"), filer.MultipartUploadOptions{
+					Authorization: requestAuth,
+				})
+				return err
+			},
+			respond: writeResultResponse("report.txt", 1),
+		},
+		{
+			name:       "get",
+			wantMethod: http.MethodGet,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				resp, err := client.Get(ctx, "/docs/report.txt", filer.GetOptions{Authorization: requestAuth})
+				if resp != nil {
+					resp.Body.Close()
+				}
+				return err
+			},
+			respond: func(w http.ResponseWriter) {
+				_, _ = w.Write([]byte("x"))
+			},
+		},
+		{
+			name:       "head",
+			wantMethod: http.MethodHead,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.Head(ctx, "/docs/report.txt", filer.HeadOptions{Authorization: requestAuth})
+				return err
+			},
+		},
+		{
+			name:       "tags",
+			wantMethod: http.MethodHead,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.Tags(ctx, "/docs/report.txt", filer.HeadOptions{Authorization: requestAuth})
+				return err
+			},
+		},
+		{
+			name:       "stat",
+			wantMethod: http.MethodGet,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.Stat(ctx, "/docs/report.txt", filer.StatOptions{Authorization: requestAuth})
+				return err
+			},
+			respond: func(w http.ResponseWriter) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"FullPath": "/docs/report.txt"})
+			},
+		},
+		{
+			name:       "list page",
+			wantMethod: http.MethodGet,
+			wantPath:   "/docs/",
+			call: func(ctx context.Context, client *filer.Client) error {
+				_, err := client.ListPage(ctx, "/docs", filer.ListOptions{Authorization: requestAuth})
+				return err
+			},
+			respond: listPageResponse,
+		},
+		{
+			name:       "walk",
+			wantMethod: http.MethodGet,
+			wantPath:   "/docs/",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.Walk(ctx, "/docs", filer.WalkOptions{Authorization: requestAuth}, func(filer.Entry) error {
+					return nil
+				})
+			},
+			respond: listPageResponse,
+		},
+		{
+			name:       "delete",
+			wantMethod: http.MethodDelete,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.Delete(ctx, "/docs/report.txt", filer.DeleteOptions{Authorization: requestAuth})
+			},
+		},
+		{
+			name:       "mkdir",
+			wantMethod: http.MethodPost,
+			wantPath:   "/docs/",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.Mkdir(ctx, "/docs", filer.MkdirOptions{Authorization: requestAuth})
+			},
+		},
+		{
+			name:       "copy",
+			wantMethod: http.MethodPost,
+			wantPath:   "/dst.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.Copy(ctx, "/src.txt", "/dst.txt", filer.CopyOptions{Authorization: requestAuth})
+			},
+		},
+		{
+			name:       "move",
+			wantMethod: http.MethodPost,
+			wantPath:   "/moved.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.Move(ctx, "/dst.txt", "/moved.txt", filer.MoveOptions{Authorization: requestAuth})
+			},
+		},
+		{
+			name:       "set tags",
+			wantMethod: http.MethodPut,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.SetTags(ctx, "/docs/report.txt", map[string]string{"Owner": "sdk"}, filer.TagOptions{Authorization: requestAuth})
+			},
+		},
+		{
+			name:       "delete tags",
+			wantMethod: http.MethodDelete,
+			wantPath:   "/docs/report.txt",
+			call: func(ctx context.Context, client *filer.Client) error {
+				return client.DeleteTags(ctx, "/docs/report.txt", filer.TagOptions{Authorization: requestAuth}, "Owner")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tt.wantMethod {
+					t.Fatalf("method = %s, want %s", r.Method, tt.wantMethod)
+				}
+				if r.URL.Path != tt.wantPath {
+					t.Fatalf("path = %s, want %s", r.URL.Path, tt.wantPath)
+				}
+				if r.Header.Get("Authorization") != requestAuth {
+					t.Fatalf("Authorization = %q, want %q", r.Header.Get("Authorization"), requestAuth)
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				if tt.respond != nil {
+					tt.respond(w)
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			client, err := filer.New(filer.Config{
+				BaseURLs:    []string{server.URL},
+				HTTPClient:  server.Client(),
+				BearerToken: "global-token",
+			})
+			if err != nil {
+				t.Fatalf("filer.New() error = %v", err)
+			}
+
+			if err := tt.call(context.Background(), client); err != nil {
+				t.Fatalf("%s call error = %v", tt.name, err)
+			}
+		})
+	}
+}
+
 func TestWriteRequestsReturnJSONAPIErrors(t *testing.T) {
 	t.Parallel()
 
@@ -535,7 +739,7 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	if err := client.Mkdir(context.Background(), "/docs"); err != nil {
+	if err := client.Mkdir(context.Background(), "/docs", filer.MkdirOptions{}); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
 	resp, err := client.Get(context.Background(), "/docs/report.txt", filer.GetOptions{
@@ -553,7 +757,7 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	if string(body) != "hello" {
 		t.Fatalf("body = %q, want hello", body)
 	}
-	head, err := client.Head(context.Background(), "/docs/report.txt")
+	head, err := client.Head(context.Background(), "/docs/report.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
@@ -563,7 +767,7 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 	if head.Tags["Owner"] != "sdk" {
 		t.Fatalf("Tags[Owner] = %q, want sdk", head.Tags["Owner"])
 	}
-	tags, err := client.Tags(context.Background(), "/docs/report.txt")
+	tags, err := client.Tags(context.Background(), "/docs/report.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Tags() error = %v", err)
 	}
@@ -628,16 +832,16 @@ func TestCopyMoveAndTaggingRequests(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	if err := client.Copy(context.Background(), "/src.txt", "/dst.txt"); err != nil {
+	if err := client.Copy(context.Background(), "/src.txt", "/dst.txt", filer.CopyOptions{}); err != nil {
 		t.Fatalf("Copy() error = %v", err)
 	}
-	if err := client.Move(context.Background(), "/dst.txt", "/moved.txt"); err != nil {
+	if err := client.Move(context.Background(), "/dst.txt", "/moved.txt", filer.MoveOptions{}); err != nil {
 		t.Fatalf("Move() error = %v", err)
 	}
-	if err := client.SetTags(context.Background(), "/moved.txt", map[string]string{"Owner": "sdk"}); err != nil {
+	if err := client.SetTags(context.Background(), "/moved.txt", map[string]string{"Owner": "sdk"}, filer.TagOptions{}); err != nil {
 		t.Fatalf("SetTags() error = %v", err)
 	}
-	if err := client.DeleteTags(context.Background(), "/moved.txt", "Owner"); err != nil {
+	if err := client.DeleteTags(context.Background(), "/moved.txt", filer.TagOptions{}, "Owner"); err != nil {
 		t.Fatalf("DeleteTags() error = %v", err)
 	}
 	if len(requests) != 4 {
@@ -659,7 +863,7 @@ func TestStatusOnlyMethodsReturnAPIErrors(t *testing.T) {
 			path:   "/docs/",
 			method: http.MethodPost,
 			call: func(client *filer.Client) error {
-				return client.Mkdir(context.Background(), "/docs")
+				return client.Mkdir(context.Background(), "/docs", filer.MkdirOptions{})
 			},
 		},
 		{
@@ -667,7 +871,7 @@ func TestStatusOnlyMethodsReturnAPIErrors(t *testing.T) {
 			path:   "/dst.txt",
 			method: http.MethodPost,
 			call: func(client *filer.Client) error {
-				return client.Copy(context.Background(), "/src.txt", "/dst.txt")
+				return client.Copy(context.Background(), "/src.txt", "/dst.txt", filer.CopyOptions{})
 			},
 		},
 		{
@@ -675,7 +879,7 @@ func TestStatusOnlyMethodsReturnAPIErrors(t *testing.T) {
 			path:   "/moved.txt",
 			method: http.MethodPost,
 			call: func(client *filer.Client) error {
-				return client.Move(context.Background(), "/dst.txt", "/moved.txt")
+				return client.Move(context.Background(), "/dst.txt", "/moved.txt", filer.MoveOptions{})
 			},
 		},
 		{
@@ -683,7 +887,7 @@ func TestStatusOnlyMethodsReturnAPIErrors(t *testing.T) {
 			path:   "/moved.txt",
 			method: http.MethodPut,
 			call: func(client *filer.Client) error {
-				return client.SetTags(context.Background(), "/moved.txt", map[string]string{"Owner": "sdk"})
+				return client.SetTags(context.Background(), "/moved.txt", map[string]string{"Owner": "sdk"}, filer.TagOptions{})
 			},
 		},
 		{
@@ -691,7 +895,7 @@ func TestStatusOnlyMethodsReturnAPIErrors(t *testing.T) {
 			path:   "/moved.txt",
 			method: http.MethodDelete,
 			call: func(client *filer.Client) error {
-				return client.DeleteTags(context.Background(), "/moved.txt", "Owner")
+				return client.DeleteTags(context.Background(), "/moved.txt", filer.TagOptions{}, "Owner")
 			},
 		},
 		{
@@ -777,12 +981,12 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 		t.Fatal("Get() error = nil, want status error")
 	}
 	assertHTTPStatus(t, err, http.StatusNotFound)
-	header, err := client.Head(context.Background(), "/missing.txt")
+	header, err := client.Head(context.Background(), "/missing.txt", filer.HeadOptions{})
 	if err == nil {
 		t.Fatalf("Head() = %v, nil, want status error", header)
 	}
 	assertHTTPStatus(t, err, http.StatusNotFound)
-	if _, err := client.Tags(context.Background(), "/missing.txt"); err == nil {
+	if _, err := client.Tags(context.Background(), "/missing.txt", filer.HeadOptions{}); err == nil {
 		t.Fatal("Tags() error = nil, want status error")
 	} else {
 		assertHTTPStatus(t, err, http.StatusNotFound)
@@ -820,16 +1024,16 @@ func TestPathValidationForMutatingMethods(t *testing.T) {
 	if _, err := client.UploadMultipart(context.Background(), "/uploads/file.txt", nil, filer.MultipartUploadOptions{}); err == nil {
 		t.Fatal("UploadMultipart() error = nil, want body error")
 	}
-	if err := client.Copy(context.Background(), "/src", ""); err == nil {
+	if err := client.Copy(context.Background(), "/src", "", filer.CopyOptions{}); err == nil {
 		t.Fatal("Copy() error = nil, want destination path error")
 	}
-	if err := client.Move(context.Background(), "/src", ""); err == nil {
+	if err := client.Move(context.Background(), "/src", "", filer.MoveOptions{}); err == nil {
 		t.Fatal("Move() error = nil, want destination path error")
 	}
-	if err := client.SetTags(context.Background(), "", map[string]string{"Owner": "sdk"}); err == nil {
+	if err := client.SetTags(context.Background(), "", map[string]string{"Owner": "sdk"}, filer.TagOptions{}); err == nil {
 		t.Fatal("SetTags() error = nil, want path error")
 	}
-	if err := client.DeleteTags(context.Background(), "", "Owner"); err == nil {
+	if err := client.DeleteTags(context.Background(), "", filer.TagOptions{}, "Owner"); err == nil {
 		t.Fatal("DeleteTags() error = nil, want path error")
 	}
 	if _, err := client.Stat(context.Background(), "", filer.StatOptions{}); err == nil {
@@ -849,6 +1053,21 @@ func TestClientClose(t *testing.T) {
 	client := newTestClient(t, server)
 	client.Close()
 	client.Close()
+}
+
+func writeResultResponse(name string, size int64) func(http.ResponseWriter) {
+	return func(w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name": name,
+			"size": size,
+		})
+	}
+}
+
+func listPageResponse(w http.ResponseWriter) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"Entries": []map[string]any{},
+	})
 }
 
 func newTestClient(t *testing.T, server *httptest.Server) *filer.Client {

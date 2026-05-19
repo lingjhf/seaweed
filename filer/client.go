@@ -57,6 +57,7 @@ type WriteOptions struct {
 	ContentDisposition string
 	SeaweedHeaders     map[string]string
 	ContentLength      int64
+	Authorization      string
 }
 
 // AppendOptions configures Append requests to the filer.
@@ -76,6 +77,7 @@ type AppendOptions struct {
 	ContentDisposition string
 	SeaweedHeaders     map[string]string
 	ContentLength      int64
+	Authorization      string
 }
 
 // MultipartUploadOptions configures UploadMultipart requests to the filer.
@@ -95,6 +97,7 @@ type MultipartUploadOptions struct {
 	FileContentType    string
 	FieldName          string
 	SeaweedHeaders     map[string]string
+	Authorization      string
 }
 
 // WriteResult is returned by successful Put, Append, and UploadMultipart requests.
@@ -114,11 +117,18 @@ type HeadResult struct {
 type GetOptions struct {
 	ResponseContentDisposition string
 	ResolveManifest            bool
+	Authorization              string
+}
+
+// HeadOptions configures a filer Head request.
+type HeadOptions struct {
+	Authorization string
 }
 
 // StatOptions configures a filer metadata request.
 type StatOptions struct {
 	ResolveManifest bool
+	Authorization   string
 }
 
 // ListOptions configures one filer listing page.
@@ -127,6 +137,7 @@ type ListOptions struct {
 	LastFileName       string
 	NamePattern        string
 	NamePatternExclude string
+	Authorization      string
 }
 
 // WalkOptions configures paginated directory walking.
@@ -135,6 +146,7 @@ type WalkOptions struct {
 	LastFileName       string
 	NamePattern        string
 	NamePatternExclude string
+	Authorization      string
 }
 
 // DeleteOptions configures a filer Delete request.
@@ -142,6 +154,27 @@ type DeleteOptions struct {
 	Recursive            bool
 	IgnoreRecursiveError bool
 	SkipChunkDeletion    bool
+	Authorization        string
+}
+
+// CopyOptions configures a filer Copy request.
+type CopyOptions struct {
+	Authorization string
+}
+
+// MoveOptions configures a filer Move request.
+type MoveOptions struct {
+	Authorization string
+}
+
+// TagOptions configures filer tag requests.
+type TagOptions struct {
+	Authorization string
+}
+
+// MkdirOptions configures a filer Mkdir request.
+type MkdirOptions struct {
+	Authorization string
 }
 
 // ListPage is one page returned by a filer directory listing.
@@ -255,6 +288,7 @@ func (c *Client) UploadMultipart(ctx context.Context, targetPath string, body io
 
 	header := http.Header{}
 	header.Set("Content-Type", multipartWriter.FormDataContentType())
+	addHeader(header, "Authorization", opts.Authorization)
 	addSeaweedHeaders(header, opts.SeaweedHeaders)
 
 	var out WriteResult
@@ -288,37 +322,43 @@ func (c *Client) write(ctx context.Context, path string, body io.Reader, opts Wr
 }
 
 // Copy copies srcPath to dstPath through the filer.
-func (c *Client) Copy(ctx context.Context, srcPath string, dstPath string) error {
+func (c *Client) Copy(ctx context.Context, srcPath string, dstPath string, opts CopyOptions) error {
 	resourcePath, err := c.resourcePath(dstPath)
 	if err != nil {
 		return err
 	}
 	query := url.Values{}
 	query.Set("cp.from", srcPath)
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPost,
 		Query:         query,
+		Header:        header,
 		ContentLength: 0,
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
 // Move moves srcPath to dstPath through the filer.
-func (c *Client) Move(ctx context.Context, srcPath string, dstPath string) error {
+func (c *Client) Move(ctx context.Context, srcPath string, dstPath string, opts MoveOptions) error {
 	resourcePath, err := c.resourcePath(dstPath)
 	if err != nil {
 		return err
 	}
 	query := url.Values{}
 	query.Set("mv.from", srcPath)
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPost,
 		Query:         query,
+		Header:        header,
 		ContentLength: 0,
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
 
 // SetTags writes SeaweedFS filer tags for path.
-func (c *Client) SetTags(ctx context.Context, path string, tags map[string]string) error {
+func (c *Client) SetTags(ctx context.Context, path string, tags map[string]string, opts TagOptions) error {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return err
@@ -326,6 +366,7 @@ func (c *Client) SetTags(ctx context.Context, path string, tags map[string]strin
 	query := url.Values{}
 	query.Set("tagging", "")
 	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	addSeaweedHeaders(header, tags)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPut,
@@ -336,28 +377,34 @@ func (c *Client) SetTags(ctx context.Context, path string, tags map[string]strin
 }
 
 // DeleteTags deletes SeaweedFS filer tag keys from path.
-func (c *Client) DeleteTags(ctx context.Context, path string, keys ...string) error {
+func (c *Client) DeleteTags(ctx context.Context, path string, opts TagOptions, keys ...string) error {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return err
 	}
 	query := url.Values{}
 	query.Set("tagging", strings.Join(keys, ","))
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodDelete,
 		Query:         query,
+		Header:        header,
 		ContentLength: -1,
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
 
 // Mkdir creates a directory path through the filer.
-func (c *Client) Mkdir(ctx context.Context, path string) error {
+func (c *Client) Mkdir(ctx context.Context, path string, opts MkdirOptions) error {
 	resourcePath, err := c.resourcePath(ensureTrailingSlash(path))
 	if err != nil {
 		return err
 	}
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodPost,
+		Header:        header,
 		ContentLength: 0,
 	}, http.StatusOK, http.StatusCreated, http.StatusNoContent)
 }
@@ -371,10 +418,13 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 	query := url.Values{}
 	httpx.AddString(query, "response-content-disposition", opts.ResponseContentDisposition)
 	addBool(query, "resolveManifest", opts.ResolveManifest)
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodGet,
 		Query:         query,
+		Header:        header,
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -388,13 +438,16 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 }
 
 // Head returns headers and parsed SeaweedFS tags for path.
-func (c *Client) Head(ctx context.Context, path string) (*HeadResult, error) {
+func (c *Client) Head(ctx context.Context, path string, opts HeadOptions) (*HeadResult, error) {
 	resourcePath, err := c.resourcePath(path)
 	if err != nil {
 		return nil, err
 	}
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodHead,
+		Header:        header,
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -404,16 +457,16 @@ func (c *Client) Head(ctx context.Context, path string) (*HeadResult, error) {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
-	header := resp.Header.Clone()
+	resultHeader := resp.Header.Clone()
 	return &HeadResult{
-		Header: header,
-		Tags:   seaweedTags(header),
+		Header: resultHeader,
+		Tags:   seaweedTags(resultHeader),
 	}, nil
 }
 
 // Tags returns parsed SeaweedFS tags for path.
-func (c *Client) Tags(ctx context.Context, path string) (map[string]string, error) {
-	head, err := c.Head(ctx, path)
+func (c *Client) Tags(ctx context.Context, path string, opts HeadOptions) (map[string]string, error) {
+	head, err := c.Head(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -429,11 +482,14 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 	query := url.Values{}
 	query.Set("metadata", "true")
 	addBool(query, "resolveManifest", opts.ResolveManifest)
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 
 	var out Entry
 	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodGet,
 		Query:         query,
+		Header:        header,
 		ContentLength: -1,
 	}, &out)
 	return &out, err
@@ -451,6 +507,7 @@ func (c *Client) Walk(ctx context.Context, path string, opts WalkOptions, fn fun
 			LastFileName:       lastFileName,
 			NamePattern:        opts.NamePattern,
 			NamePatternExclude: opts.NamePatternExclude,
+			Authorization:      opts.Authorization,
 		})
 		if err != nil {
 			return err
@@ -484,14 +541,16 @@ func (c *Client) ListPage(ctx context.Context, path string, opts ListOptions) (*
 	httpx.AddString(query, "lastFileName", opts.LastFileName)
 	httpx.AddString(query, "namePattern", opts.NamePattern)
 	httpx.AddString(query, "namePatternExclude", opts.NamePatternExclude)
+	header := http.Header{
+		"Accept": []string{"application/json"},
+	}
+	addHeader(header, "Authorization", opts.Authorization)
 
 	var out ListPage
 	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
-		Method: http.MethodGet,
-		Query:  query,
-		Header: http.Header{
-			"Accept": []string{"application/json"},
-		},
+		Method:        http.MethodGet,
+		Query:         query,
+		Header:        header,
 		ContentLength: -1,
 	}, &out)
 	return &out, err
@@ -507,9 +566,12 @@ func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) er
 	addBool(query, "recursive", opts.Recursive)
 	addBool(query, "ignoreRecursiveError", opts.IgnoreRecursiveError)
 	addBool(query, "skipChunkDeletion", opts.SkipChunkDeletion)
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, resourcePath, httpx.Request{
 		Method:        http.MethodDelete,
 		Query:         query,
+		Header:        header,
 		ContentLength: -1,
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
@@ -561,6 +623,7 @@ func putHeader(opts WriteOptions) http.Header {
 	header := http.Header{}
 	addHeader(header, "Content-Type", opts.ContentType)
 	addHeader(header, "Content-Disposition", opts.ContentDisposition)
+	addHeader(header, "Authorization", opts.Authorization)
 	addSeaweedHeaders(header, opts.SeaweedHeaders)
 	return header
 }
@@ -588,6 +651,7 @@ func writeOptionsFromAppend(opts AppendOptions) WriteOptions {
 		ContentDisposition: opts.ContentDisposition,
 		SeaweedHeaders:     opts.SeaweedHeaders,
 		ContentLength:      opts.ContentLength,
+		Authorization:      opts.Authorization,
 	}
 }
 

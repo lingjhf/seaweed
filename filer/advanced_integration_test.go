@@ -44,7 +44,7 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 	}
 	assertAdvancedContent(t, ctx, client, "/advanced/source.txt", "hello-world")
 
-	if err := client.Filer().Mkdir(ctx, "/advanced/uploads"); err != nil {
+	if err := client.Filer().Mkdir(ctx, "/advanced/uploads", filer.MkdirOptions{}); err != nil {
 		t.Fatalf("Mkdir(upload dir) error = %v", err)
 	}
 	_, err = client.Filer().UploadMultipart(ctx, "/advanced/uploads/multipart.txt", strings.NewReader("multipart-data"), filer.MultipartUploadOptions{
@@ -57,7 +57,7 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 		t.Fatalf("UploadMultipart() error = %v", err)
 	}
 	assertAdvancedContent(t, ctx, client, "/advanced/uploads/multipart.txt", "multipart-data")
-	multipartHead, err := client.Filer().Head(ctx, "/advanced/uploads/multipart.txt")
+	multipartHead, err := client.Filer().Head(ctx, "/advanced/uploads/multipart.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head(multipart) error = %v", err)
 	}
@@ -72,27 +72,27 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 		t.Fatalf("multipart stat = %+v, want uploaded path and size", multipartEntry)
 	}
 
-	if err := client.Filer().Copy(ctx, "/advanced/source.txt", "/advanced/copy.txt"); err != nil {
+	if err := client.Filer().Copy(ctx, "/advanced/source.txt", "/advanced/copy.txt", filer.CopyOptions{}); err != nil {
 		t.Fatalf("Copy() error = %v", err)
 	}
 	assertAdvancedContent(t, ctx, client, "/advanced/copy.txt", "hello-world")
 
-	if err := client.Filer().Move(ctx, "/advanced/copy.txt", "/advanced/moved.txt"); err != nil {
+	if err := client.Filer().Move(ctx, "/advanced/copy.txt", "/advanced/moved.txt", filer.MoveOptions{}); err != nil {
 		t.Fatalf("Move() error = %v", err)
 	}
 	assertAdvancedContent(t, ctx, client, "/advanced/moved.txt", "hello-world")
 
-	if err := client.Filer().SetTags(ctx, "/advanced/moved.txt", map[string]string{"Project": "sdk"}); err != nil {
+	if err := client.Filer().SetTags(ctx, "/advanced/moved.txt", map[string]string{"Project": "sdk"}, filer.TagOptions{}); err != nil {
 		t.Fatalf("SetTags() error = %v", err)
 	}
-	head, err := client.Filer().Head(ctx, "/advanced/moved.txt")
+	head, err := client.Filer().Head(ctx, "/advanced/moved.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
 	if head.Header.Get("Seaweed-Project") != "sdk" {
 		t.Fatalf("Seaweed-Project = %q, want sdk", head.Header.Get("Seaweed-Project"))
 	}
-	tags, err := client.Filer().Tags(ctx, "/advanced/moved.txt")
+	tags, err := client.Filer().Tags(ctx, "/advanced/moved.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Tags() error = %v", err)
 	}
@@ -110,10 +110,10 @@ func TestFilerAdvancedIntegration(t *testing.T) {
 	if !slices.Contains(walked, "/advanced/source.txt") || !slices.Contains(walked, "/advanced/moved.txt") {
 		t.Fatalf("Walk() paths = %#v", walked)
 	}
-	if err := client.Filer().DeleteTags(ctx, "/advanced/moved.txt", "Project"); err != nil {
+	if err := client.Filer().DeleteTags(ctx, "/advanced/moved.txt", filer.TagOptions{}, "Project"); err != nil {
 		t.Fatalf("DeleteTags() error = %v", err)
 	}
-	head, err = client.Filer().Head(ctx, "/advanced/moved.txt")
+	head, err = client.Filer().Head(ctx, "/advanced/moved.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head after delete tags error = %v", err)
 	}

@@ -65,6 +65,82 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 			errorType,
 		},
 	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Head",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(filer.HeadOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*filer.HeadResult)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Tags",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(filer.HeadOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf(map[string]string{}),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Copy",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(""),
+			reflect.TypeOf(filer.CopyOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Move",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(""),
+			reflect.TypeOf(filer.MoveOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "SetTags",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(map[string]string{}),
+			reflect.TypeOf(filer.TagOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "DeleteTags",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(filer.TagOptions{}),
+			reflect.TypeOf([]string{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Mkdir",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(filer.MkdirOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
 
 	requireFields(t, reflect.TypeOf(volume.PutOptions{}),
 		"Fsync",
@@ -91,7 +167,19 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 	)
 	requireFields(t, reflect.TypeOf(volume.DeleteOptions{}), "Authorization")
 	requireFields(t, reflect.TypeOf(blob.Config{}), "EnableVolumeAuthorization")
-	requireFields(t, reflect.TypeOf(filer.MultipartUploadOptions{}), "Filename")
+	requireFields(t, reflect.TypeOf(filer.WriteOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.AppendOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.MultipartUploadOptions{}), "Filename", "Authorization")
+	requireFields(t, reflect.TypeOf(filer.GetOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.HeadOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.StatOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.ListOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.WalkOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.DeleteOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.CopyOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.MoveOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.TagOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(filer.MkdirOptions{}), "Authorization")
 }
 
 func requireMethod(t *testing.T, receiver reflect.Type, name string, wantIn []reflect.Type, wantOut []reflect.Type) {

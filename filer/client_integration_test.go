@@ -27,7 +27,7 @@ func TestFilerCoreIntegration(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if err := client.Filer().Mkdir(ctx, "/empty"); err != nil {
+	if err := client.Filer().Mkdir(ctx, "/empty", filer.MkdirOptions{}); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
 
@@ -55,7 +55,7 @@ func TestFilerCoreIntegration(t *testing.T) {
 		t.Fatalf("body = %q, want filer-data", body)
 	}
 
-	head, err := client.Filer().Head(ctx, "/docs/report.txt")
+	head, err := client.Filer().Head(ctx, "/docs/report.txt", filer.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}

@@ -8,8 +8,8 @@ This project is in the `0.x` development line. Public APIs can change between mi
 
 - Master client: assign, lookup, `/submit`, status, health, volume management helpers.
 - Volume client: direct put, get, head, delete, official read/write options, typed status.
-- Blob client: assign/lookup plus volume upload, read failover, head, delete.
-- Filer client: put, append, multipart file or directory upload, get, head, stat, list, mkdir, delete, copy, move, tagging.
+- Blob client: assign/lookup plus volume upload, read failover, head, delete, optional master-issued volume authorization.
+- Filer client: put, append, multipart file or directory upload, get, head, stat, list, mkdir, delete, copy, move, tagging, per-request authorization.
 - TUS client: native SeaweedFS resumable upload support for `/.tus`.
 - S3/IAM clients: AWS SDK v2 clients configured for SeaweedFS endpoints.
 
@@ -45,6 +45,8 @@ See `examples/basic` and `examples/s3`.
 Direct package clients such as `master.New`, `volume.New`, `filer.New`, and `tus.New` return `(*Client, error)` and accept standard `*http.Client` configuration. They do not expose SDK internal transport types.
 
 By default, `seaweed.New` uses an SDK HTTP client with a larger idle connection pool than Go's default transport. Use `seaweed.NewHTTPClient` when passing the same tuned client to direct package constructors.
+
+Native master, volume, blob, and filer clients support SeaweedFS JWT-secured deployments. Master assign and lookup responses expose the documented `Authorization` response header, volume and filer option structs accept per-request `Authorization`, and blob clients can pass master-issued volume tokens automatically with `EnableVolumeAuthorization`.
 
 SeaweedFS clients accept endpoint lists, for example `MasterURLs`, `VolumeURLs`, `FilerURLs`, `S3URLs`, `IAMURLs`, and direct client `BaseURLs`. If `IAMURLs` is empty, IAM uses `S3URLs` because SeaweedFS serves IAM from the S3 service by default.
 
@@ -146,6 +148,49 @@ if err != nil {
 defer client.Close()
 ```
 
+For SeaweedFS deployments with JWT-secured volume access, enable blob authorization or pass the master-issued token into direct volume requests:
+
+```go
+client, err := seaweed.New(seaweed.Config{
+    MasterURLs:                []string{"http://master-1:9333"},
+    EnableVolumeAuthorization: true,
+})
+if err != nil {
+    return err
+}
+defer client.Close()
+
+put, err := client.Blob().Put(ctx, strings.NewReader("secure-data"), blob.PutOptions{
+    ContentLength: int64(len("secure-data")),
+})
+if err != nil {
+    return err
+}
+fmt.Println(put.FileID)
+```
+
+Filer requests accept the token issued for your filer access policy on every operation:
+
+```go
+filerToken := "Bearer <jwt>"
+
+_, err := client.Filer().Put(ctx, "/secure/hello.txt", strings.NewReader("secure-data"), filer.WriteOptions{
+    ContentLength: int64(len("secure-data")),
+    Authorization: filerToken,
+})
+if err != nil {
+    return err
+}
+
+entry, err := client.Filer().Stat(ctx, "/secure/hello.txt", filer.StatOptions{
+    Authorization: filerToken,
+})
+if err != nil {
+    return err
+}
+fmt.Println(entry.FullPath)
+```
+
 ## Usage Examples
 
 ### Blob Upload
@@ -208,7 +253,7 @@ if err != nil {
     return err
 }
 
-head, err := client.Filer().Head(ctx, "/sdk/hello.txt")
+head, err := client.Filer().Head(ctx, "/sdk/hello.txt", filer.HeadOptions{})
 if err != nil {
     return err
 }
