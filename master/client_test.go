@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
@@ -89,6 +91,114 @@ func TestClientLookupBuildsRequest(t *testing.T) {
 	if len(resp.Locations) != 1 {
 		t.Fatalf("locations len = %d, want 1", len(resp.Locations))
 	}
+}
+
+func TestClientSubmitBuildsRequest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/submit" {
+			t.Fatalf("path = %q, want /submit", r.URL.Path)
+		}
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
+			t.Fatalf("Content-Type = %q, want multipart/form-data", r.Header.Get("Content-Type"))
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm() error = %v", err)
+		}
+		file, header, err := r.FormFile("document")
+		if err != nil {
+			t.Fatalf("FormFile() error = %v", err)
+		}
+		defer file.Close()
+		if header.Filename != "report.txt" {
+			t.Fatalf("multipart filename = %q, want report.txt", header.Filename)
+		}
+		if header.Header.Get("Content-Type") != "text/plain" {
+			t.Fatalf("multipart Content-Type = %q, want text/plain", header.Header.Get("Content-Type"))
+		}
+		body, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("read multipart file: %v", err)
+		}
+		if string(body) != "hello" {
+			t.Fatalf("multipart body = %q, want hello", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"fid":      "3,abc",
+			"fileName": "report.txt",
+			"fileUrl":  "127.0.0.1:8080/3,abc",
+			"size":     5,
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	resp, err := client.Submit(context.Background(), "report.txt", strings.NewReader("hello"), master.SubmitOptions{
+		FieldName:       "document",
+		FileContentType: "text/plain",
+	})
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if resp.FID != "3,abc" || resp.FileName != "report.txt" || resp.FileURL != "127.0.0.1:8080/3,abc" || resp.Size != 5 {
+		t.Fatalf("Submit() = %+v, want decoded response", resp)
+	}
+}
+
+func TestClientSubmitValidation(t *testing.T) {
+	t.Parallel()
+
+	client, err := master.New(master.Config{
+		BaseURLs:   []string{"http://example.test"},
+		HTTPClient: http.DefaultClient,
+	})
+	if err != nil {
+		t.Fatalf("master.New() error = %v", err)
+	}
+	if _, err := client.Submit(context.Background(), "", strings.NewReader("hello"), master.SubmitOptions{}); err == nil {
+		t.Fatal("Submit() error = nil, want filename error")
+	}
+	if _, err := client.Submit(context.Background(), "report.txt", nil, master.SubmitOptions{}); err == nil {
+		t.Fatal("Submit() error = nil, want body error")
+	}
+}
+
+func TestClientSubmitReturnsJSONAPIErrors(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "submit failed",
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.Submit(context.Background(), "report.txt", strings.NewReader("hello"), master.SubmitOptions{})
+	if err == nil {
+		t.Fatal("Submit() error = nil, want API error")
+	}
+	assertAPIError(t, err, "submit failed")
+}
+
+func TestClientSubmitReturnsHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.Submit(context.Background(), "report.txt", strings.NewReader("hello"), master.SubmitOptions{})
+	if err == nil {
+		t.Fatal("Submit() error = nil, want HTTP error")
+	}
+	assertHTTPStatus(t, err, http.StatusServiceUnavailable)
 }
 
 func TestClientVolumeManagementRequests(t *testing.T) {
@@ -453,5 +563,16 @@ func assertAPIError(t *testing.T, err error, want string) {
 	}
 	if apiErr.Message != want {
 		t.Fatalf("APIError.Message = %q, want %q", apiErr.Message, want)
+	}
+}
+
+func assertHTTPStatus(t *testing.T, err error, want int) {
+	t.Helper()
+	var httpErr *httpx.Error
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T, want *httpx.Error", err)
+	}
+	if httpErr.StatusCode != want {
+		t.Fatalf("status = %d, want %d", httpErr.StatusCode, want)
 	}
 }

@@ -3,8 +3,13 @@ package master
 import (
 	"context"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"strings"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
@@ -116,6 +121,20 @@ type GrowOptions struct {
 // CountResponse is returned by master endpoints that report a count.
 type CountResponse struct {
 	Count int `json:"count"`
+}
+
+// SubmitOptions configures a /submit upload request.
+type SubmitOptions struct {
+	FieldName       string
+	FileContentType string
+}
+
+// SubmitResponse is returned by /submit.
+type SubmitResponse struct {
+	FID      string `json:"fid"`
+	FileName string `json:"fileName"`
+	FileURL  string `json:"fileUrl"`
+	Size     int64  `json:"size"`
 }
 
 // ClusterStatus describes master leader and peer state.
@@ -266,6 +285,31 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 	return &out, err
 }
 
+// Submit uploads a file through the master's /submit convenience endpoint.
+func (c *Client) Submit(ctx context.Context, filename string, body io.Reader, opts SubmitOptions) (*SubmitResponse, error) {
+	if strings.TrimSpace(filename) == "" {
+		return nil, fmt.Errorf("master: filename is required")
+	}
+	if body == nil {
+		return nil, fmt.Errorf("master: body is required")
+	}
+
+	reader, writer := io.Pipe()
+	multipartWriter := multipart.NewWriter(writer)
+	go writeMultipartBody(writer, multipartWriter, submitFieldName(opts), filename, body, opts.FileContentType)
+
+	var out SubmitResponse
+	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/submit", httpx.Request{
+		Method: http.MethodPost,
+		Header: http.Header{
+			"Content-Type": []string{multipartWriter.FormDataContentType()},
+		},
+		Body:          reader,
+		ContentLength: -1,
+	}, &out)
+	return &out, err
+}
+
 // Vacuum triggers master volume vacuuming with the given garbage threshold.
 func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
 	query := url.Values{}
@@ -345,4 +389,36 @@ func (c *Client) VolumeStatus(ctx context.Context) (*VolumeStatusResponse, error
 // Close stops background endpoint health checks.
 func (c *Client) Close() {
 	c.endpoints.Close()
+}
+
+func submitFieldName(opts SubmitOptions) string {
+	if strings.TrimSpace(opts.FieldName) == "" {
+		return "file"
+	}
+	return opts.FieldName
+}
+
+func writeMultipartBody(pipeWriter *io.PipeWriter, multipartWriter *multipart.Writer, fieldName string, filename string, body io.Reader, contentType string) {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+		"name":     fieldName,
+		"filename": filename,
+	}))
+	header.Set("Content-Type", contentType)
+
+	part, err := multipartWriter.CreatePart(header)
+	if err == nil {
+		_, err = io.Copy(part, body)
+	}
+	if closeErr := multipartWriter.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = pipeWriter.CloseWithError(err)
+		return
+	}
+	_ = pipeWriter.Close()
 }

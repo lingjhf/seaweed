@@ -38,6 +38,14 @@ func TestMasterAssignLookupIntegration(t *testing.T) {
 		t.Fatal("Assign().FID is empty")
 	}
 
+	submitted, err := client.Master().Submit(ctx, "submit.txt", strings.NewReader("hello submit"), master.SubmitOptions{})
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if submitted.FID == "" || submitted.Size == 0 {
+		t.Fatalf("Submit() = %+v, want file id and size", submitted)
+	}
+
 	dirStatus, err := client.Master().DirStatus(ctx)
 	if err != nil {
 		t.Fatalf("DirStatus() error = %v", err)
