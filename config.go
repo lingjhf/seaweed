@@ -60,6 +60,9 @@ type Config struct {
 	Retry RetryPolicy
 	// BlobLocationCacheTTL limits how long blob volume lookups are cached.
 	BlobLocationCacheTTL time.Duration
+	// EnableVolumeAuthorization makes Blob use master-issued per-file
+	// Authorization headers for volume reads, writes, and deletes.
+	EnableVolumeAuthorization bool
 
 	// EndpointPolicy is the default policy for all endpoint lists.
 	EndpointPolicy EndpointPolicy

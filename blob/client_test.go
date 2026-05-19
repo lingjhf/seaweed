@@ -162,6 +162,38 @@ func TestPutUsesPublicURLAndAssignOptions(t *testing.T) {
 	}
 }
 
+func TestPutUsesAssignAuthorizationWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer assign-token" {
+			t.Fatalf("Authorization = %q, want Bearer assign-token", r.Header.Get("Authorization"))
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name": "9,abc",
+			"size": 5,
+		})
+	}))
+	defer volumeServer.Close()
+
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Authorization", "Bearer assign-token")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"fid": "9,abc",
+			"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+		})
+	}))
+	defer masterServer.Close()
+
+	client := newTestClientWithConfig(t, masterServer, blob.Config{
+		EnableVolumeAuthorization: true,
+	})
+	if _, err := client.Put(context.Background(), strings.NewReader("hello"), blob.PutOptions{ContentLength: 5}); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+}
+
 func TestPutValidatesAssignResponse(t *testing.T) {
 	t.Parallel()
 
@@ -357,6 +389,103 @@ func TestGetHeadDeleteLookupCacheAndInvalidate(t *testing.T) {
 	}
 	if lookups.Load() != 2 {
 		t.Fatalf("lookups after invalidation = %d, want 2", lookups.Load())
+	}
+}
+
+func TestGetHeadDeleteUseLookupAuthorizationWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	wantAuthorizationByMethod := map[string]string{
+		http.MethodGet:    "Bearer read-get-token",
+		http.MethodHead:   "Bearer read-head-token",
+		http.MethodDelete: "Bearer delete-token",
+	}
+	var volumeCalls atomic.Int32
+	volumeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		volumeCalls.Add(1)
+		wantAuthorization := wantAuthorizationByMethod[r.Method]
+		if r.Header.Get("Authorization") != wantAuthorization {
+			t.Fatalf("%s Authorization = %q, want %q", r.Method, r.Header.Get("Authorization"), wantAuthorization)
+		}
+		switch r.Method {
+		case http.MethodGet:
+			if r.Header.Get("Range") != "bytes=0-4" {
+				t.Fatalf("Range = %q, want bytes=0-4", r.Header.Get("Range"))
+			}
+			_, _ = w.Write([]byte("hello"))
+		case http.MethodHead:
+			w.Header().Set("ETag", `"etag"`)
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	}))
+	defer volumeServer.Close()
+
+	var lookups atomic.Int32
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dir/lookup" {
+			t.Fatalf("master path = %q, want /dir/lookup", r.URL.Path)
+		}
+		call := lookups.Add(1)
+		query := r.URL.Query()
+		assertQuery(t, query.Get("volumeId"), "9")
+		assertQuery(t, query.Get("fileId"), "9,abc")
+		switch call {
+		case 1:
+			assertQuery(t, query.Get("read"), "yes")
+			w.Header().Set("Authorization", "Bearer read-get-token")
+		case 2:
+			assertQuery(t, query.Get("read"), "yes")
+			w.Header().Set("Authorization", "Bearer read-head-token")
+		case 3:
+			assertQuery(t, query.Get("read"), "")
+			w.Header().Set("Authorization", "Bearer delete-token")
+		default:
+			t.Fatalf("unexpected lookup call %d", call)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"locations": []map[string]string{
+				{
+					"url": strings.TrimPrefix(volumeServer.URL, "http://"),
+				},
+			},
+		})
+	}))
+	defer masterServer.Close()
+
+	client := newTestClientWithConfig(t, masterServer, blob.Config{
+		EnableVolumeAuthorization: true,
+	})
+	resp, err := client.Get(context.Background(), "9,abc", blob.GetOptions{Range: "bytes=0-4"})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "hello" {
+		t.Fatalf("body = %q, want hello", body)
+	}
+	header, err := client.Head(context.Background(), "9,abc")
+	if err != nil {
+		t.Fatalf("Head() error = %v", err)
+	}
+	if header.Get("ETag") != `"etag"` {
+		t.Fatalf("ETag = %q, want etag", header.Get("ETag"))
+	}
+	if err := client.Delete(context.Background(), "9,abc"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if lookups.Load() != 3 {
+		t.Fatalf("lookups = %d, want 3", lookups.Load())
+	}
+	if volumeCalls.Load() != 3 {
+		t.Fatalf("volume calls = %d, want 3", volumeCalls.Load())
 	}
 }
 

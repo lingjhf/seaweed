@@ -127,18 +127,19 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 
 	httpClient := &http.Client{}
 	client, err := seaweed.New(seaweed.Config{
-		MasterURLs:           []string{"http://127.0.0.1:9333/master/?q=1#fragment"},
-		VolumeURLs:           []string{"http://127.0.0.1:8080/volume/"},
-		FilerURLs:            []string{"http://127.0.0.1:8888/filer/"},
-		TUSBasePath:          "uploads",
-		S3URLs:               []string{"http://127.0.0.1:8333/s3/"},
-		IAMURLs:              []string{"http://127.0.0.1:8333/iam/"},
-		AccessKeyID:          "access",
-		SecretAccessKey:      "secret",
-		UserAgent:            "seaweed-test",
-		BearerToken:          "token",
-		UsePublicURLs:        true,
-		BlobLocationCacheTTL: 10 * time.Second,
+		MasterURLs:                []string{"http://127.0.0.1:9333/master/?q=1#fragment"},
+		VolumeURLs:                []string{"http://127.0.0.1:8080/volume/"},
+		FilerURLs:                 []string{"http://127.0.0.1:8888/filer/"},
+		TUSBasePath:               "uploads",
+		S3URLs:                    []string{"http://127.0.0.1:8333/s3/"},
+		IAMURLs:                   []string{"http://127.0.0.1:8333/iam/"},
+		AccessKeyID:               "access",
+		SecretAccessKey:           "secret",
+		UserAgent:                 "seaweed-test",
+		BearerToken:               "token",
+		UsePublicURLs:             true,
+		BlobLocationCacheTTL:      10 * time.Second,
+		EnableVolumeAuthorization: true,
 		BlobEndpointPolicy: seaweed.EndpointPolicy{
 			Mode: seaweed.EndpointPolicyRoundRobin,
 		},
@@ -177,6 +178,9 @@ func TestNewNormalizesConfiguredURLsAndAccessors(t *testing.T) {
 	}
 	if config.BlobLocationCacheTTL != 10*time.Second {
 		t.Fatalf("BlobLocationCacheTTL = %s, want 10s", config.BlobLocationCacheTTL)
+	}
+	if !config.EnableVolumeAuthorization {
+		t.Fatal("EnableVolumeAuthorization = false, want true")
 	}
 	if config.BlobEndpointPolicy.Mode != seaweed.EndpointPolicyRoundRobin {
 		t.Fatalf("BlobEndpointPolicy.Mode = %q, want round-robin", config.BlobEndpointPolicy.Mode)

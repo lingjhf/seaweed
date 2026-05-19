@@ -25,6 +25,9 @@ type Config struct {
 	EndpointPolicy   EndpointPolicy
 	UsePublicURLs    bool
 	LocationCacheTTL time.Duration
+	// EnableVolumeAuthorization makes Blob use master-issued per-file
+	// Authorization headers for volume reads, writes, and deletes.
+	EnableVolumeAuthorization bool
 }
 
 // RetryPolicy controls retry attempts for retryable blob volume requests.
@@ -43,6 +46,7 @@ type Client struct {
 	endpointPolicy   EndpointPolicy
 	usePublicURLs    bool
 	locationCacheTTL time.Duration
+	enableVolumeAuth bool
 
 	mu        sync.RWMutex
 	locations map[string]locationCacheEntry
@@ -106,6 +110,7 @@ func New(config Config) (*Client, error) {
 		endpointPolicy:   endpointPolicy,
 		usePublicURLs:    config.UsePublicURLs,
 		locationCacheTTL: config.LocationCacheTTL,
+		enableVolumeAuth: config.EnableVolumeAuthorization,
 		locations:        map[string]locationCacheEntry{},
 		lookups:          map[string]*lookupFlight{},
 	}, nil
@@ -136,11 +141,15 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 		return nil, err
 	}
 	defer volumeClient.Close()
-	put, err := volumeClient.Put(ctx, assigned.FID, body, volume.PutOptions{
+	putOptions := volume.PutOptions{
 		ContentType:   opts.ContentType,
 		ContentLength: opts.ContentLength,
 		Filename:      opts.Filename,
-	})
+	}
+	if c.enableVolumeAuth {
+		putOptions.Authorization = assigned.Authorization
+	}
+	put, err := volumeClient.Put(ctx, assigned.FID, body, putOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +165,9 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 
 // Get reads fileID from its volume server.
 func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http.Response, error) {
+	if c.enableVolumeAuth {
+		return c.getWithAuthorization(ctx, fileID, opts)
+	}
 	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
 		return nil, err
@@ -172,6 +184,9 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 
 // Head returns headers for fileID from its volume server.
 func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
+	if c.enableVolumeAuth {
+		return c.headWithAuthorization(ctx, fileID)
+	}
 	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
 		return nil, err
@@ -188,6 +203,9 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 
 // Delete removes fileID from its volume server.
 func (c *Client) Delete(ctx context.Context, fileID string) error {
+	if c.enableVolumeAuth {
+		return c.deleteWithAuthorization(ctx, fileID)
+	}
 	volumeClient, err := c.volumeClientFor(ctx, fileID)
 	if err != nil {
 		return err
@@ -200,6 +218,62 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) getWithAuthorization(ctx context.Context, fileID string, opts GetOptions) (*http.Response, error) {
+	volumeClient, authorization, err := c.authorizedVolumeClientFor(ctx, fileID, true)
+	if err != nil {
+		return nil, err
+	}
+	defer volumeClient.Close()
+	return volumeClient.Get(ctx, fileID, volume.GetOptions{
+		Range:         opts.Range,
+		Authorization: authorization,
+	})
+}
+
+func (c *Client) headWithAuthorization(ctx context.Context, fileID string) (http.Header, error) {
+	volumeClient, authorization, err := c.authorizedVolumeClientFor(ctx, fileID, true)
+	if err != nil {
+		return nil, err
+	}
+	defer volumeClient.Close()
+	return volumeClient.Head(ctx, fileID, volume.HeadOptions{Authorization: authorization})
+}
+
+func (c *Client) deleteWithAuthorization(ctx context.Context, fileID string) error {
+	volumeClient, authorization, err := c.authorizedVolumeClientFor(ctx, fileID, false)
+	if err != nil {
+		return err
+	}
+	defer volumeClient.Close()
+	return volumeClient.Delete(ctx, fileID, volume.DeleteOptions{Authorization: authorization})
+}
+
+func (c *Client) authorizedVolumeClientFor(ctx context.Context, fileID string, read bool) (*volume.Client, string, error) {
+	volumeID := volumeID(fileID)
+	if volumeID == "" {
+		return nil, "", fmt.Errorf("blob: invalid file id %q", fileID)
+	}
+	lookup, err := c.master.Lookup(ctx, volumeID, master.LookupOptions{
+		FileID: fileID,
+		Read:   read,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if len(lookup.Locations) == 0 {
+		return nil, "", fmt.Errorf("blob: no locations for volume %s", volumeID)
+	}
+	baseURLs, err := c.lookupVolumeURLs(lookup.Locations)
+	if err != nil {
+		return nil, "", err
+	}
+	volumeClient, err := c.volumeClient(baseURLs)
+	if err != nil {
+		return nil, "", err
+	}
+	return volumeClient, lookup.Authorization, nil
 }
 
 func (c *Client) volumeClient(baseURLs []string) (*volume.Client, error) {

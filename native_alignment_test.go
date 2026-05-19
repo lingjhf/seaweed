@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/lingjhf/seaweed/blob"
 	"github.com/lingjhf/seaweed/filer"
 	"github.com/lingjhf/seaweed/master"
 	"github.com/lingjhf/seaweed/volume"
@@ -89,6 +90,7 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 		"Authorization",
 	)
 	requireFields(t, reflect.TypeOf(volume.DeleteOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(blob.Config{}), "EnableVolumeAuthorization")
 	requireFields(t, reflect.TypeOf(filer.MultipartUploadOptions{}), "Filename")
 }
 

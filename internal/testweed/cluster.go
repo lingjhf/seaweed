@@ -34,6 +34,18 @@ type Cluster struct {
 func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
 	t.Helper()
 
+	return startMasterVolume(t, ctx, "")
+}
+
+func StartMasterVolumeWithSecurity(t *testing.T, ctx context.Context, securityTOML string) *Cluster {
+	t.Helper()
+
+	return startMasterVolume(t, ctx, securityTOML)
+}
+
+func startMasterVolume(t *testing.T, ctx context.Context, securityTOML string) *Cluster {
+	t.Helper()
+
 	weed := findWeedBinary(t)
 	dataDir := t.TempDir()
 	masterPort, masterGRPCPort := freePortPair(t)
@@ -50,6 +62,7 @@ func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
 	volumeDir := filepath.Join(dataDir, "volume")
 	mkdir(t, masterDir)
 	mkdir(t, volumeDir)
+	writeSecurityConfig(t, dataDir, securityTOML)
 
 	cluster.start(t, ctx, weed, "master",
 		"-port", fmt.Sprint(masterPort),
@@ -163,6 +176,9 @@ func (c *Cluster) startWithEnv(t *testing.T, ctx context.Context, name string, e
 	t.Helper()
 
 	cmd := exec.CommandContext(ctx, name, args...)
+	if c.dataDir != "" {
+		cmd.Dir = c.dataDir
+	}
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
@@ -220,7 +236,11 @@ func resolveExistingPath(t *testing.T, path string) string {
 		return path
 	}
 	if _, err := os.Stat(path); err == nil {
-		return path
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			t.Fatalf("resolve %s: %v", path, err)
+		}
+		return abs
 	}
 	wd, err := os.Getwd()
 	if err != nil {
@@ -307,6 +327,18 @@ func mkdir(t *testing.T, path string) {
 
 	if err := os.MkdirAll(path, 0755); err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
+	}
+}
+
+func writeSecurityConfig(t *testing.T, dataDir string, securityTOML string) {
+	t.Helper()
+
+	if strings.TrimSpace(securityTOML) == "" {
+		return
+	}
+	path := filepath.Join(dataDir, "security.toml")
+	if err := os.WriteFile(path, []byte(securityTOML), 0600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }
 

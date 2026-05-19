@@ -19,6 +19,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Master `Submit` wraps the documented `/submit` convenience upload endpoint.
 - Master assign and lookup responses now expose SeaweedFS `Authorization` response headers.
 - Volume requests now support per-request `Authorization` headers.
+- Blob can opt in to master-issued volume `Authorization` headers with `EnableVolumeAuthorization`.
 - Volume read and write options now cover documented query parameters and headers.
 - Volume server status now returns typed disk and volume metadata.
 - Master directory status now returns typed topology metadata.
