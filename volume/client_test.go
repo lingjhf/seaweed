@@ -77,6 +77,9 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 		if r.Header.Get("Seaweed-Owner") != "sdk" {
 			t.Fatalf("Seaweed-Owner = %q, want sdk", r.Header.Get("Seaweed-Owner"))
 		}
+		if r.Header.Get("Authorization") != "Bearer write-token" {
+			t.Fatalf("Authorization = %q, want Bearer write-token", r.Header.Get("Authorization"))
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"name": "3,abc",
 			"size": 5,
@@ -90,6 +93,7 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 		ContentMD5:       "md5",
 		Filename:         `a"b.txt`,
 		ContentLength:    5,
+		Authorization:    "Bearer write-token",
 		Fsync:            true,
 		Replicate:        true,
 		ModifiedAtSecond: 1716181200,
@@ -209,6 +213,7 @@ func TestGetAndHeadSendReadOptions(t *testing.T) {
 					IfModifiedSince: modifiedSince,
 					IfNoneMatch:     `"tag"`,
 					AcceptEncoding:  "gzip",
+					Authorization:   "Bearer read-token",
 				})
 				if err != nil {
 					return err
@@ -235,6 +240,7 @@ func TestGetAndHeadSendReadOptions(t *testing.T) {
 					IfModifiedSince: modifiedSince,
 					IfNoneMatch:     `"tag"`,
 					AcceptEncoding:  "gzip",
+					Authorization:   "Bearer read-token",
 				})
 				return err
 			},
@@ -270,6 +276,9 @@ func TestGetAndHeadSendReadOptions(t *testing.T) {
 				}
 				if r.Header.Get("Accept-Encoding") != "gzip" {
 					t.Fatalf("Accept-Encoding = %q, want gzip", r.Header.Get("Accept-Encoding"))
+				}
+				if r.Header.Get("Authorization") != "Bearer read-token" {
+					t.Fatalf("Authorization = %q, want Bearer read-token", r.Header.Get("Authorization"))
 				}
 				_, _ = w.Write([]byte("ok"))
 			}))
@@ -351,7 +360,7 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 	if header.Get("ETag") != `"tag"` {
 		t.Fatalf("ETag = %q, want tag", header.Get("ETag"))
 	}
-	if err := client.Delete(context.Background(), "3,abc"); err != nil {
+	if err := client.Delete(context.Background(), "3,abc", volume.DeleteOptions{}); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	status, err := client.Status(context.Background())
@@ -417,7 +426,7 @@ func TestHTTPErrorResponses(t *testing.T) {
 		t.Fatalf("Head() = %v, nil, want error", header)
 	}
 	assertHTTPStatus(t, err, http.StatusNotFound)
-	if err := client.Delete(context.Background(), "3,abc"); err == nil {
+	if err := client.Delete(context.Background(), "3,abc", volume.DeleteOptions{}); err == nil {
 		t.Fatal("Delete() error = nil, want error")
 	} else {
 		assertHTTPStatus(t, err, http.StatusNotFound)
@@ -441,7 +450,7 @@ func TestDeleteReturnsStatusAPIError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	err := client.Delete(context.Background(), "3,abc")
+	err := client.Delete(context.Background(), "3,abc", volume.DeleteOptions{})
 	if err == nil {
 		t.Fatal("Delete() error = nil, want API error")
 	}
@@ -482,8 +491,95 @@ func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	if _, err := clientWithBaseURL.Head(context.Background(), "", volume.HeadOptions{}); err == nil {
 		t.Fatal("Head() error = nil, want file id error")
 	}
-	if err := clientWithBaseURL.Delete(context.Background(), ""); err == nil {
+	if err := clientWithBaseURL.Delete(context.Background(), "", volume.DeleteOptions{}); err == nil {
 		t.Fatal("Delete() error = nil, want file id error")
+	}
+}
+
+func TestRequestsUsePerRequestAuthorization(t *testing.T) {
+	t.Parallel()
+
+	const wantAuthorization = "Bearer request-token"
+
+	tests := []struct {
+		name   string
+		method string
+		call   func(*volume.Client) error
+	}{
+		{
+			name:   "put",
+			method: http.MethodPut,
+			call: func(client *volume.Client) error {
+				_, err := client.Put(context.Background(), "3,abc", stringsReader("body"), volume.PutOptions{
+					ContentLength: int64(len("body")),
+					Authorization: wantAuthorization,
+				})
+				return err
+			},
+		},
+		{
+			name:   "get",
+			method: http.MethodGet,
+			call: func(client *volume.Client) error {
+				resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{Authorization: wantAuthorization})
+				if err != nil {
+					return err
+				}
+				resp.Body.Close()
+				return nil
+			},
+		},
+		{
+			name:   "head",
+			method: http.MethodHead,
+			call: func(client *volume.Client) error {
+				_, err := client.Head(context.Background(), "3,abc", volume.HeadOptions{Authorization: wantAuthorization})
+				return err
+			},
+		},
+		{
+			name:   "delete",
+			method: http.MethodDelete,
+			call: func(client *volume.Client) error {
+				return client.Delete(context.Background(), "3,abc", volume.DeleteOptions{Authorization: wantAuthorization})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tt.method {
+					t.Fatalf("method = %s, want %s", r.Method, tt.method)
+				}
+				if r.Header.Get("Authorization") != wantAuthorization {
+					t.Fatalf("Authorization = %q, want %q", r.Header.Get("Authorization"), wantAuthorization)
+				}
+				switch r.Method {
+				case http.MethodPut:
+					_ = json.NewEncoder(w).Encode(map[string]any{"name": "3,abc", "size": 5})
+				case http.MethodGet:
+					_, _ = w.Write([]byte("body"))
+				default:
+					w.WriteHeader(http.StatusNoContent)
+				}
+			}))
+			defer server.Close()
+
+			client, err := volume.New(volume.Config{
+				BaseURLs:    []string{server.URL},
+				HTTPClient:  server.Client(),
+				BearerToken: "global-token",
+			})
+			if err != nil {
+				t.Fatalf("volume.New() error = %v", err)
+			}
+			if err := tt.call(client); err != nil {
+				t.Fatalf("call error = %v", err)
+			}
+		})
 	}
 }
 

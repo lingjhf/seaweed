@@ -42,6 +42,7 @@ type PutOptions struct {
 	ContentMD5       string
 	Filename         string
 	ContentLength    int64
+	Authorization    string
 	Fsync            bool
 	Replicate        bool
 	ModifiedAtSecond int64
@@ -71,10 +72,16 @@ type GetOptions struct {
 	IfModifiedSince time.Time
 	IfNoneMatch     string
 	AcceptEncoding  string
+	Authorization   string
 }
 
 // HeadOptions configures a file header read from a volume server.
 type HeadOptions = GetOptions
+
+// DeleteOptions configures a file delete from a volume server.
+type DeleteOptions struct {
+	Authorization string
+}
 
 // StatusResponse describes volume server status returned by /status.
 type StatusResponse struct {
@@ -163,6 +170,7 @@ func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts Pu
 	addHeader(header, "Content-Encoding", opts.ContentEncoding)
 	addHeader(header, "Content-MD5", opts.ContentMD5)
 	addHeader(header, "Content-Disposition", contentDisposition(opts.Filename))
+	addHeader(header, "Authorization", opts.Authorization)
 	addSeaweedHeaders(header, opts.SeaweedHeaders)
 
 	var out PutResponse
@@ -222,13 +230,16 @@ func (c *Client) Head(ctx context.Context, fileID string, opts HeadOptions) (htt
 }
 
 // Delete removes fileID from a volume server.
-func (c *Client) Delete(ctx context.Context, fileID string) error {
+func (c *Client) Delete(ctx context.Context, fileID string, opts DeleteOptions) error {
 	path, err := c.filePath(fileID)
 	if err != nil {
 		return err
 	}
+	header := http.Header{}
+	addHeader(header, "Authorization", opts.Authorization)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodDelete,
+		Header:        header,
 		ContentLength: -1,
 	}, http.StatusOK, http.StatusAccepted, http.StatusNoContent)
 }
@@ -306,6 +317,7 @@ func readHeader(opts GetOptions) http.Header {
 	}
 	addHeader(header, "If-None-Match", opts.IfNoneMatch)
 	addHeader(header, "Accept-Encoding", opts.AcceptEncoding)
+	addHeader(header, "Authorization", opts.Authorization)
 	return header
 }
 

@@ -26,6 +26,7 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 		assertQuery(t, query.Get("collection"), "photos")
 		assertQuery(t, query.Get("replication"), "001")
 		assertQuery(t, query.Get("ttl"), "3d")
+		w.Header().Set("Authorization", "Bearer assign-token")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"count":     2,
 			"fid":       "3,abc",
@@ -49,6 +50,9 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 	if resp.FID != "3,abc" {
 		t.Fatalf("FID = %q, want 3,abc", resp.FID)
 	}
+	if resp.Authorization != "Bearer assign-token" {
+		t.Fatalf("Authorization = %q, want Bearer assign-token", resp.Authorization)
+	}
 }
 
 func TestNewRequiresBaseURLs(t *testing.T) {
@@ -69,6 +73,7 @@ func TestClientLookupBuildsRequest(t *testing.T) {
 		query := r.URL.Query()
 		assertQuery(t, query.Get("volumeId"), "3")
 		assertQuery(t, query.Get("collection"), "photos")
+		w.Header().Set("Authorization", "Bearer lookup-token")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"locations": []map[string]string{
 				{
@@ -90,6 +95,9 @@ func TestClientLookupBuildsRequest(t *testing.T) {
 	}
 	if len(resp.Locations) != 1 {
 		t.Fatalf("locations len = %d, want 1", len(resp.Locations))
+	}
+	if resp.Authorization != "Bearer lookup-token" {
+		t.Fatalf("Authorization = %q, want Bearer lookup-token", resp.Authorization)
 	}
 }
 

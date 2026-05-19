@@ -41,6 +41,16 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 			errorType,
 		},
 	)
+	requireMethod(t, reflect.TypeOf((*volume.Client)(nil)), "Delete",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(volume.DeleteOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
 
 	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "UploadMultipart",
 		[]reflect.Type{
@@ -61,6 +71,7 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 		"ModifiedAtSecond",
 		"ChunkManifest",
 		"SeaweedHeaders",
+		"Authorization",
 	)
 	requireFields(t, reflect.TypeOf(volume.GetOptions{}),
 		"ReadDeleted",
@@ -75,7 +86,9 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 		"IfModifiedSince",
 		"IfNoneMatch",
 		"AcceptEncoding",
+		"Authorization",
 	)
+	requireFields(t, reflect.TypeOf(volume.DeleteOptions{}), "Authorization")
 	requireFields(t, reflect.TypeOf(filer.MultipartUploadOptions{}), "Filename")
 }
 

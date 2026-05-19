@@ -192,7 +192,7 @@ func (c *Client) Delete(ctx context.Context, fileID string) error {
 	if err != nil {
 		return err
 	}
-	err = volumeClient.Delete(ctx, fileID)
+	err = volumeClient.Delete(ctx, fileID, volume.DeleteOptions{})
 	if err != nil {
 		if httpx.IsHTTPStatus(err, http.StatusNotFound, http.StatusNotFound) || httpx.IsHTTPStatus(err, http.StatusInternalServerError, 599) {
 			c.forget(volumeID(fileID))

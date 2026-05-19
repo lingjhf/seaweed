@@ -80,7 +80,7 @@ func TestVolumePutGetDeleteIntegration(t *testing.T) {
 		t.Fatal("Head().ETag is empty")
 	}
 
-	if err := client.Volume().Delete(ctx, assigned.FID); err != nil {
+	if err := client.Volume().Delete(ctx, assigned.FID, volume.DeleteOptions{}); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 }

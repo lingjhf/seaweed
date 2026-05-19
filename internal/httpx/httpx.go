@@ -198,16 +198,23 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 
 // DecodeJSONEndpoint sends request through endpoints and decodes JSON into out.
 func (c *Client) DecodeJSONEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request, out any) error {
+	_, err := c.DecodeJSONEndpointWithResponse(ctx, endpoints, path, request, out)
+	return err
+}
+
+// DecodeJSONEndpointWithResponse sends request through endpoints, decodes JSON
+// into out, and returns the response for callers that need response headers.
+func (c *Client) DecodeJSONEndpointWithResponse(ctx context.Context, endpoints *EndpointSet, path string, request Request, out any) (*http.Response, error) {
 	resp, err := c.DoEndpoint(ctx, endpoints, path, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return ResponseError(request.Method, responseURL(resp, request.URL), resp)
+		return resp, ResponseError(request.Method, responseURL(resp, request.URL), resp)
 	}
-	return decodeJSONResponse(resp, request, out)
+	return resp, decodeJSONResponse(resp, request, out)
 }
 
 // CheckStatus sends request and requires one of the expected response statuses.
@@ -266,7 +273,7 @@ func (c *Client) newHTTPRequest(ctx context.Context, request Request) (*http.Req
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)
 	}
-	if c.bearerToken != "" {
+	if c.bearerToken != "" && req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
 	}
 	return req, nil

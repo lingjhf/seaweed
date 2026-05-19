@@ -78,10 +78,11 @@ type AssignOptions struct {
 
 // AssignResponse is returned by /dir/assign.
 type AssignResponse struct {
-	Count     int    `json:"count"`
-	FID       string `json:"fid"`
-	URL       string `json:"url"`
-	PublicURL string `json:"publicUrl"`
+	Count         int    `json:"count"`
+	FID           string `json:"fid"`
+	URL           string `json:"url"`
+	PublicURL     string `json:"publicUrl"`
+	Authorization string `json:"-"`
 }
 
 // LookupOptions configures a /dir/lookup request.
@@ -93,7 +94,8 @@ type LookupOptions struct {
 
 // LookupResponse is returned by /dir/lookup.
 type LookupResponse struct {
-	Locations []Location `json:"locations"`
+	Locations     []Location `json:"locations"`
+	Authorization string     `json:"-"`
 }
 
 // Location describes a volume server returned by master lookup.
@@ -260,10 +262,13 @@ func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignRespons
 	httpx.AddString(query, "disk", opts.Disk)
 
 	var out AssignResponse
-	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/assign", httpx.Request{
+	resp, err := c.http.DecodeJSONEndpointWithResponse(ctx, c.endpoints, "/dir/assign", httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,
 	}, &out)
+	if resp != nil {
+		out.Authorization = resp.Header.Get("Authorization")
+	}
 	return &out, err
 }
 
@@ -278,10 +283,13 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 	}
 
 	var out LookupResponse
-	err := c.http.DecodeJSONEndpoint(ctx, c.endpoints, "/dir/lookup", httpx.Request{
+	resp, err := c.http.DecodeJSONEndpointWithResponse(ctx, c.endpoints, "/dir/lookup", httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,
 	}, &out)
+	if resp != nil {
+		out.Authorization = resp.Header.Get("Authorization")
+	}
 	return &out, err
 }
 
