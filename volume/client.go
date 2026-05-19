@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
 )
@@ -34,11 +37,16 @@ type Client struct {
 
 // PutOptions configures a file upload to a volume server.
 type PutOptions struct {
-	ContentType     string
-	ContentEncoding string
-	ContentMD5      string
-	Filename        string
-	ContentLength   int64
+	ContentType      string
+	ContentEncoding  string
+	ContentMD5       string
+	Filename         string
+	ContentLength    int64
+	Fsync            bool
+	Replicate        bool
+	ModifiedAtSecond int64
+	ChunkManifest    bool
+	SeaweedHeaders   map[string]string
 }
 
 // PutResponse is returned by a successful volume upload.
@@ -48,10 +56,25 @@ type PutResponse struct {
 	ETag string `json:"eTag"`
 }
 
-// GetOptions configures a file download from a volume server.
+// GetOptions configures a file read from a volume server.
 type GetOptions struct {
-	Range string
+	Range           string
+	ReadDeleted     bool
+	Width           int
+	Height          int
+	Mode            string
+	CropX1          *int
+	CropY1          *int
+	CropX2          *int
+	CropY2          *int
+	ChunkManifest   *bool
+	IfModifiedSince time.Time
+	IfNoneMatch     string
+	AcceptEncoding  string
 }
+
+// HeadOptions configures a file header read from a volume server.
+type HeadOptions = GetOptions
 
 // StatusResponse describes volume server status returned by /status.
 type StatusResponse struct {
@@ -140,10 +163,12 @@ func (c *Client) Put(ctx context.Context, fileID string, body io.Reader, opts Pu
 	addHeader(header, "Content-Encoding", opts.ContentEncoding)
 	addHeader(header, "Content-MD5", opts.ContentMD5)
 	addHeader(header, "Content-Disposition", contentDisposition(opts.Filename))
+	addSeaweedHeaders(header, opts.SeaweedHeaders)
 
 	var out PutResponse
 	err = c.http.DecodeJSONEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodPut,
+		Query:         putQuery(opts),
 		Header:        header,
 		Body:          body,
 		ContentLength: opts.ContentLength,
@@ -157,12 +182,11 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 	if err != nil {
 		return nil, err
 	}
-	header := http.Header{}
-	addHeader(header, "Range", opts.Range)
 
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodGet,
-		Header:        header,
+		Query:         readQuery(opts),
+		Header:        readHeader(opts),
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -176,13 +200,15 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 }
 
 // Head returns response headers for fileID.
-func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
+func (c *Client) Head(ctx context.Context, fileID string, opts HeadOptions) (http.Header, error) {
 	path, err := c.filePath(fileID)
 	if err != nil {
 		return nil, err
 	}
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodHead,
+		Query:         readQuery(opts),
+		Header:        readHeader(opts),
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -236,6 +262,62 @@ func (c *Client) filePath(fileID string) (string, error) {
 func addHeader(header http.Header, key string, value string) {
 	if value != "" {
 		header.Set(key, value)
+	}
+}
+
+func addSeaweedHeaders(header http.Header, values map[string]string) {
+	for key, value := range values {
+		header.Set("Seaweed-"+strings.TrimPrefix(key, "Seaweed-"), value)
+	}
+}
+
+func putQuery(opts PutOptions) url.Values {
+	query := url.Values{}
+	addBool(query, "fsync", opts.Fsync)
+	if opts.Replicate {
+		query.Set("type", "replicate")
+	}
+	httpx.AddInt64(query, "ts", opts.ModifiedAtSecond)
+	addBool(query, "cm", opts.ChunkManifest)
+	return query
+}
+
+func readQuery(opts GetOptions) url.Values {
+	query := url.Values{}
+	addBool(query, "readDeleted", opts.ReadDeleted)
+	httpx.AddInt(query, "width", opts.Width)
+	httpx.AddInt(query, "height", opts.Height)
+	httpx.AddString(query, "mode", opts.Mode)
+	addIntPointer(query, "crop_x1", opts.CropX1)
+	addIntPointer(query, "crop_y1", opts.CropY1)
+	addIntPointer(query, "crop_x2", opts.CropX2)
+	addIntPointer(query, "crop_y2", opts.CropY2)
+	if opts.ChunkManifest != nil {
+		query.Set("cm", strconv.FormatBool(*opts.ChunkManifest))
+	}
+	return query
+}
+
+func readHeader(opts GetOptions) http.Header {
+	header := http.Header{}
+	addHeader(header, "Range", opts.Range)
+	if !opts.IfModifiedSince.IsZero() {
+		header.Set("If-Modified-Since", opts.IfModifiedSince.UTC().Format(http.TimeFormat))
+	}
+	addHeader(header, "If-None-Match", opts.IfNoneMatch)
+	addHeader(header, "Accept-Encoding", opts.AcceptEncoding)
+	return header
+}
+
+func addIntPointer(query url.Values, key string, value *int) {
+	if value != nil {
+		query.Set(key, strconv.Itoa(*value))
+	}
+}
+
+func addBool(query url.Values, key string, value bool) {
+	if value {
+		query.Set(key, "true")
 	}
 }
 

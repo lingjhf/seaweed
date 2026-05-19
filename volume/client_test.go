@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lingjhf/seaweed/internal/httpx"
 	"github.com/lingjhf/seaweed/volume"
@@ -59,6 +60,11 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		assertQuery(t, query.Get("fsync"), "true")
+		assertQuery(t, query.Get("type"), "replicate")
+		assertQuery(t, query.Get("ts"), "1716181200")
+		assertQuery(t, query.Get("cm"), "true")
 		if r.Header.Get("Content-Encoding") != "gzip" {
 			t.Fatalf("Content-Encoding = %q, want gzip", r.Header.Get("Content-Encoding"))
 		}
@@ -67,6 +73,9 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 		}
 		if r.Header.Get("Content-Disposition") != `inline; filename="a\"b.txt"` {
 			t.Fatalf("Content-Disposition = %q", r.Header.Get("Content-Disposition"))
+		}
+		if r.Header.Get("Seaweed-Owner") != "sdk" {
+			t.Fatalf("Seaweed-Owner = %q, want sdk", r.Header.Get("Seaweed-Owner"))
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"name": "3,abc",
@@ -77,10 +86,17 @@ func TestPutSendsOptionalHeaders(t *testing.T) {
 
 	client := newTestClient(t, server)
 	_, err := client.Put(context.Background(), "/3,abc", stringsReader("hello"), volume.PutOptions{
-		ContentEncoding: "gzip",
-		ContentMD5:      "md5",
-		Filename:        `a"b.txt`,
-		ContentLength:   5,
+		ContentEncoding:  "gzip",
+		ContentMD5:       "md5",
+		Filename:         `a"b.txt`,
+		ContentLength:    5,
+		Fsync:            true,
+		Replicate:        true,
+		ModifiedAtSecond: 1716181200,
+		ChunkManifest:    true,
+		SeaweedHeaders: map[string]string{
+			"Owner": "sdk",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Put() error = %v", err)
@@ -159,6 +175,114 @@ func TestGetSendsRange(t *testing.T) {
 	}
 }
 
+func TestGetAndHeadSendReadOptions(t *testing.T) {
+	t.Parallel()
+
+	cropX1 := 0
+	cropY1 := 1
+	cropX2 := 20
+	cropY2 := 21
+	chunkManifest := false
+	modifiedSince := time.Date(2026, 5, 19, 9, 30, 0, 0, time.FixedZone("CST", 8*60*60))
+	wantModifiedSince := "Tue, 19 May 2026 01:30:00 GMT"
+
+	tests := []struct {
+		name   string
+		method string
+		call   func(*volume.Client) error
+	}{
+		{
+			name:   "get",
+			method: http.MethodGet,
+			call: func(client *volume.Client) error {
+				resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{
+					Range:           "bytes=1-3",
+					ReadDeleted:     true,
+					Width:           100,
+					Height:          80,
+					Mode:            "fit",
+					CropX1:          &cropX1,
+					CropY1:          &cropY1,
+					CropX2:          &cropX2,
+					CropY2:          &cropY2,
+					ChunkManifest:   &chunkManifest,
+					IfModifiedSince: modifiedSince,
+					IfNoneMatch:     `"tag"`,
+					AcceptEncoding:  "gzip",
+				})
+				if err != nil {
+					return err
+				}
+				resp.Body.Close()
+				return nil
+			},
+		},
+		{
+			name:   "head",
+			method: http.MethodHead,
+			call: func(client *volume.Client) error {
+				_, err := client.Head(context.Background(), "3,abc", volume.HeadOptions{
+					Range:           "bytes=1-3",
+					ReadDeleted:     true,
+					Width:           100,
+					Height:          80,
+					Mode:            "fit",
+					CropX1:          &cropX1,
+					CropY1:          &cropY1,
+					CropX2:          &cropX2,
+					CropY2:          &cropY2,
+					ChunkManifest:   &chunkManifest,
+					IfModifiedSince: modifiedSince,
+					IfNoneMatch:     `"tag"`,
+					AcceptEncoding:  "gzip",
+				})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tt.method {
+					t.Fatalf("method = %s, want %s", r.Method, tt.method)
+				}
+				query := r.URL.Query()
+				assertQuery(t, query.Get("readDeleted"), "true")
+				assertQuery(t, query.Get("width"), "100")
+				assertQuery(t, query.Get("height"), "80")
+				assertQuery(t, query.Get("mode"), "fit")
+				assertQuery(t, query.Get("crop_x1"), "0")
+				assertQuery(t, query.Get("crop_y1"), "1")
+				assertQuery(t, query.Get("crop_x2"), "20")
+				assertQuery(t, query.Get("crop_y2"), "21")
+				assertQuery(t, query.Get("cm"), "false")
+				if r.Header.Get("Range") != "bytes=1-3" {
+					t.Fatalf("Range = %q, want bytes=1-3", r.Header.Get("Range"))
+				}
+				if r.Header.Get("If-Modified-Since") != wantModifiedSince {
+					t.Fatalf("If-Modified-Since = %q, want %q", r.Header.Get("If-Modified-Since"), wantModifiedSince)
+				}
+				if r.Header.Get("If-None-Match") != `"tag"` {
+					t.Fatalf("If-None-Match = %q, want tag", r.Header.Get("If-None-Match"))
+				}
+				if r.Header.Get("Accept-Encoding") != "gzip" {
+					t.Fatalf("Accept-Encoding = %q, want gzip", r.Header.Get("Accept-Encoding"))
+				}
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer server.Close()
+
+			client := newTestClient(t, server)
+			if err := tt.call(client); err != nil {
+				t.Fatalf("call error = %v", err)
+			}
+		})
+	}
+}
+
 func TestHeadDeleteStatusAndHealth(t *testing.T) {
 	t.Parallel()
 
@@ -220,7 +344,7 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	header, err := client.Head(context.Background(), "3,abc")
+	header, err := client.Head(context.Background(), "3,abc", volume.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
@@ -288,7 +412,7 @@ func TestHTTPErrorResponses(t *testing.T) {
 		t.Fatal("Get() error = nil, want error")
 	}
 	assertHTTPStatus(t, err, http.StatusNotFound)
-	header, err := client.Head(context.Background(), "3,abc")
+	header, err := client.Head(context.Background(), "3,abc", volume.HeadOptions{})
 	if err == nil {
 		t.Fatalf("Head() = %v, nil, want error", header)
 	}
@@ -355,7 +479,7 @@ func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	if _, err := clientWithBaseURL.Put(context.Background(), "", stringsReader("body"), volume.PutOptions{}); err == nil {
 		t.Fatal("Put() error = nil, want file id error")
 	}
-	if _, err := clientWithBaseURL.Head(context.Background(), ""); err == nil {
+	if _, err := clientWithBaseURL.Head(context.Background(), "", volume.HeadOptions{}); err == nil {
 		t.Fatal("Head() error = nil, want file id error")
 	}
 	if err := clientWithBaseURL.Delete(context.Background(), ""); err == nil {
@@ -376,6 +500,13 @@ func TestClientClose(t *testing.T) {
 
 func stringsReader(s string) io.Reader {
 	return strings.NewReader(s)
+}
+
+func assertQuery(t *testing.T, got string, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("query value = %q, want %q", got, want)
+	}
 }
 
 func newTestClient(t *testing.T, server *httptest.Server) *volume.Client {

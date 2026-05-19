@@ -72,6 +72,14 @@ func TestVolumePutGetDeleteIntegration(t *testing.T) {
 		t.Fatalf("body = %q, want volume-data", body)
 	}
 
+	header, err := client.Volume().Head(ctx, assigned.FID, volume.HeadOptions{})
+	if err != nil {
+		t.Fatalf("Head() error = %v", err)
+	}
+	if header.Get("ETag") == "" {
+		t.Fatal("Head().ETag is empty")
+	}
+
 	if err := client.Volume().Delete(ctx, assigned.FID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}

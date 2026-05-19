@@ -176,7 +176,7 @@ func (c *Client) Head(ctx context.Context, fileID string) (http.Header, error) {
 	if err != nil {
 		return nil, err
 	}
-	header, err := volumeClient.Head(ctx, fileID)
+	header, err := volumeClient.Head(ctx, fileID, volume.HeadOptions{})
 	if err != nil {
 		if httpx.IsHTTPStatus(err, http.StatusNotFound, http.StatusNotFound) || httpx.IsHTTPStatus(err, http.StatusInternalServerError, 599) {
 			c.forget(volumeID(fileID))
