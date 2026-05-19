@@ -6,10 +6,10 @@ This project is in the `0.x` development line. Public APIs can change between mi
 
 ## Features
 
-- Master client: assign, lookup, status, health, volume management helpers.
-- Volume client: direct put, get, head, delete, typed status.
+- Master client: assign, lookup, `/submit`, status, health, volume management helpers.
+- Volume client: direct put, get, head, delete, official read/write options, typed status.
 - Blob client: assign/lookup plus volume upload, read failover, head, delete.
-- Filer client: put, append, multipart upload, get, head, stat, list, mkdir, delete, copy, move, tagging.
+- Filer client: put, append, multipart file or directory upload, get, head, stat, list, mkdir, delete, copy, move, tagging.
 - TUS client: native SeaweedFS resumable upload support for `/.tus`.
 - S3/IAM clients: AWS SDK v2 clients configured for SeaweedFS endpoints.
 
@@ -332,6 +332,14 @@ if err != nil {
 }
 fmt.Println(assigned.FID)
 
+submitted, err := masterClient.Submit(ctx, "hello.txt", strings.NewReader("hello master"), master.SubmitOptions{
+    FileContentType: "text/plain",
+})
+if err != nil {
+    return err
+}
+fmt.Println(submitted.FID, submitted.Size)
+
 dirStatus, err := masterClient.DirStatus(ctx)
 if err != nil {
     return err
@@ -344,19 +352,45 @@ if err != nil {
 }
 fmt.Println(volumeStatus.Volumes.Free, volumeStatus.Volumes.Max)
 
+volumeURL := assigned.URL
+if !strings.Contains(volumeURL, "://") {
+    volumeURL = "http://" + volumeURL
+}
 volumeClient, err := volume.New(volume.Config{
-    BaseURLs:   []string{"http://127.0.0.1:8080"},
+    BaseURLs:   []string{volumeURL},
     HTTPClient: httpClient,
 })
 if err != nil {
     return err
 }
 
+volumeData := "hello volume"
+put, err := volumeClient.Put(ctx, assigned.FID, strings.NewReader(volumeData), volume.PutOptions{
+    ContentType:   "text/plain",
+    ContentLength: int64(len(volumeData)),
+    Fsync:         true,
+    SeaweedHeaders: map[string]string{
+        "Owner": "sdk",
+    },
+})
+if err != nil {
+    return err
+}
+fmt.Println(put.Name, put.Size)
+
 serverStatus, err := volumeClient.Status(ctx)
 if err != nil {
     return err
 }
 fmt.Println(serverStatus.Version, len(serverStatus.Volumes))
+
+partial, err := volumeClient.Get(ctx, assigned.FID, volume.GetOptions{
+    Range: "bytes=0-4",
+})
+if err != nil {
+    return err
+}
+defer partial.Body.Close()
 ```
 
 ### Error Handling
@@ -405,6 +439,7 @@ See `CHANGELOG.md` and `RELEASE.md` before cutting a release.
 ## Notes
 
 - JSON responses with an `error` field are returned as `*seaweed.APIError`, including status-only operations such as delete, mkdir, and TUS termination.
+- Master, volume, and filer clients track the documented native HTTP API surface; debug-only pretty output is intentionally not modeled.
 - Volume health checks use `/healthz`; use `Volume().Status(ctx)` for full disk and volume metadata.
 - S3/IAM uses AWS SDK for Go v2 and path-style S3 addressing.
 - IAM defaults to `S3URLs` because SeaweedFS embeds IAM in the S3 server by default.

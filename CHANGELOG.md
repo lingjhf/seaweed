@@ -10,9 +10,13 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Filer write results no longer expose `Error`; write API failures are returned as errors.
 - Endpoint configuration uses endpoint lists for master, volume, filer, TUS, S3, and IAM clients.
 - Filer uses a resource-operation API with explicit write results, append options, head results, and page-based listing.
+- Volume `Head` now accepts `HeadOptions` so `HEAD` and `GET` share documented read options.
+- Filer `UploadMultipart` now accepts a target path and uses `MultipartUploadOptions.Filename` only for directory targets.
 
 ### Added
 
+- Master `Submit` wraps the documented `/submit` convenience upload endpoint.
+- Volume read and write options now cover documented query parameters and headers.
 - Volume server status now returns typed disk and volume metadata.
 - Master directory status now returns typed topology metadata.
 - Master volume status now returns typed volume placement metadata.
@@ -25,7 +29,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Tuned default HTTP transport with larger idle connection pools.
 - Filer typed metadata fields, `Tags`, and paginated `Walk`.
 - Filer entries now expose `Uid` and `Gid` metadata as `UID` and `GID`.
-- Filer now supports streaming multipart uploads with `UploadMultipart`.
+- Filer now supports streaming multipart uploads with `UploadMultipart` for directory and file path targets.
 - TUS creation-with-upload by default, with chunked upload still available through `ChunkSize`.
 - Benchmarks for HTTP, Blob cached lookup, path escaping, and TUS upload paths.
 - CI target aligned with unit, race, and vet checks.
