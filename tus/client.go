@@ -209,7 +209,7 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	if resp.StatusCode != http.StatusCreated {
 		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
-	location, err := c.resolveLocation(resp.Header.Get("Location"))
+	location, err := resolveLocation(resp.Header.Get("Location"), resp.Request.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	if resp.StatusCode != http.StatusCreated {
 		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
-	location, err := c.resolveLocation(resp.Header.Get("Location"))
+	location, err := resolveLocation(resp.Header.Get("Location"), resp.Request.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +458,7 @@ func (c *Client) uploadURL(location string) (string, bool, error) {
 	return location, true, nil
 }
 
-func (c *Client) resolveLocation(location string) (string, error) {
+func resolveLocation(location string, responseURL *url.URL) (string, error) {
 	if location == "" {
 		return "", errors.New("tus: location is empty")
 	}
@@ -472,7 +472,10 @@ func (c *Client) resolveLocation(location string) (string, error) {
 	if !strings.HasPrefix(location, "/") {
 		return "", errors.New("tus: relative location must start with /")
 	}
-	return c.endpoints.URL(location), nil
+	if responseURL == nil {
+		return "", errors.New("tus: response url is required")
+	}
+	return responseURL.ResolveReference(parsed).String(), nil
 }
 
 func addMetadata(header http.Header, metadata map[string]string) {

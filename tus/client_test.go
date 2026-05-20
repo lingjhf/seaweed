@@ -349,6 +349,56 @@ func TestCreateResolvesAbsoluteLocation(t *testing.T) {
 	}
 }
 
+func TestCreateResolvesRelativeLocationFromResponseEndpoint(t *testing.T) {
+	t.Parallel()
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("first method = %s, want POST", r.Method)
+		}
+		w.Header().Set("Location", "/.tus/.uploads/first")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer first.Close()
+
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("second method = %s, want POST", r.Method)
+		}
+		w.Header().Set("Location", "/.tus/.uploads/second")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer second.Close()
+
+	client, err := tus.New(tus.Config{
+		FilerURLs:  []string{first.URL, second.URL},
+		BasePath:   "/.tus",
+		HTTPClient: first.Client(),
+		EndpointPolicy: tus.EndpointPolicy{
+			Mode: httpx.EndpointPolicyRoundRobin,
+		},
+	})
+	if err != nil {
+		t.Fatalf("tus.New() error = %v", err)
+	}
+	defer client.Close()
+
+	firstUpload, err := client.Create(context.Background(), "/first.bin", tus.CreateOptions{Size: 1})
+	if err != nil {
+		t.Fatalf("first Create() error = %v", err)
+	}
+	secondUpload, err := client.Create(context.Background(), "/second.bin", tus.CreateOptions{Size: 1})
+	if err != nil {
+		t.Fatalf("second Create() error = %v", err)
+	}
+	if firstUpload.Location != first.URL+"/.tus/.uploads/first" {
+		t.Fatalf("first location = %q, want response endpoint", firstUpload.Location)
+	}
+	if secondUpload.Location != second.URL+"/.tus/.uploads/second" {
+		t.Fatalf("second location = %q, want response endpoint", secondUpload.Location)
+	}
+}
+
 func TestHeadPatchAndTerminate(t *testing.T) {
 	t.Parallel()
 
