@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -225,10 +226,8 @@ func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...i
 	}
 	defer resp.Body.Close()
 
-	for _, status := range expected {
-		if resp.StatusCode == status {
-			return checkStatusResponse(resp, request)
-		}
+	if slices.Contains(expected, resp.StatusCode) {
+		return checkStatusResponse(resp, request)
 	}
 	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 }
@@ -241,10 +240,8 @@ func (c *Client) CheckStatusEndpoint(ctx context.Context, endpoints *EndpointSet
 	}
 	defer resp.Body.Close()
 
-	for _, status := range expected {
-		if resp.StatusCode == status {
-			return checkStatusResponse(resp, request)
-		}
+	if slices.Contains(expected, resp.StatusCode) {
+		return checkStatusResponse(resp, request)
 	}
 	return ResponseError(request.Method, responseURL(resp, request.URL), resp)
 }

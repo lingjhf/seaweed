@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -314,12 +315,7 @@ func freeDistinctPortPair(t *testing.T, used ...int) (int, int) {
 }
 
 func portIsUsed(port int, used []int) bool {
-	for _, existing := range used {
-		if port == existing {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(used, port)
 }
 
 func mkdir(t *testing.T, path string) {
