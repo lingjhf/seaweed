@@ -47,7 +47,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 ### Changed
 
 - Volume health checks now use `/healthz` instead of reading full `/status`.
-- Coverage gate now requires at least `94.0%` combined production coverage from unit and integration profiles.
+- Coverage gate now requires at least `94.1%` combined production coverage from unit and integration profiles.
 - Master and volume status structs now decode the official `RepType` volume field.
 - README examples now cover Blob, Filer, TUS, S3/IAM, endpoint policy, and validation flows.
 - TUS documentation now states that SeaweedFS currently declares only creation, creation-with-upload, and termination.
@@ -57,3 +57,4 @@ This project is in the `0.x` development line. Public APIs can change while the 
 
 - Endpoint circuit breaker now enforces configured half-open request limits.
 - TUS relative upload `Location` headers are now resolved against the filer endpoint that created the session.
+- TUS `Create` and `CreateWithUpload` now reject negative upload sizes before sending requests.
