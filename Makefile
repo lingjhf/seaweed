@@ -1,7 +1,7 @@
 .PHONY: test test-race vet integration coverage bench ci check check-full release-check
 
 WEED_BINARY ?= ./weed
-COVER_MIN ?= 92.0
+COVER_MIN ?= 93.0
 
 test:
 	go test -count=1 ./...

@@ -41,6 +41,41 @@ func TestDecodeJSONReturnsHTTPError(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONHTTPErrorUsesFallbackURLAndReadError(t *testing.T) {
+	t.Parallel()
+
+	client := httpx.NewClient(httpx.Config{
+		HTTPClient: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusServiceUnavailable,
+					Status:     "503 Service Unavailable",
+					Header:     make(http.Header),
+					Body:       failingBody{},
+				}, nil
+			}),
+		},
+	})
+	err := client.DecodeJSON(context.Background(), httpx.Request{
+		Method: http.MethodGet,
+		URL:    "http://example.test/status",
+	}, nil)
+	if err == nil {
+		t.Fatal("DecodeJSON() error = nil, want HTTP error")
+	}
+
+	var httpErr *httpx.Error
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T, want *httpx.Error", err)
+	}
+	if httpErr.URL != "http://example.test/status" {
+		t.Fatalf("URL = %q, want fallback request URL", httpErr.URL)
+	}
+	if !strings.Contains(httpErr.Body, "failed to read response body: read failed") {
+		t.Fatalf("Body = %q, want read error context", httpErr.Body)
+	}
+}
+
 func TestDoSetsHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -1123,4 +1158,20 @@ func TestAddQueryValues(t *testing.T) {
 	if got := query.Encode(); got != want {
 		t.Fatalf("query = %q, want %q", got, want)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (failingBody) Close() error {
+	return nil
 }
