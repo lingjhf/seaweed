@@ -4,11 +4,11 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/lingjhf/seaweed)](https://go.dev/)
 [![License](https://img.shields.io/github/license/lingjhf/seaweed)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/lingjhf/seaweed/test.yml?branch=master)](https://github.com/lingjhf/seaweed/actions)
-[![Release](https://img.shields.io/github/v/tag/lingjhf/seaweed?label=release&sort=semver)](https://github.com/lingjhf/seaweed/tree/0.1.1)
+[![Release](https://img.shields.io/github/v/tag/lingjhf/seaweed?label=release&sort=semver)](https://github.com/lingjhf/seaweed/tree/v0.1.1)
 
 Go client SDK for SeaweedFS native HTTP APIs plus SeaweedFS S3/IAM compatibility.
 
-Current production-usable release: [`0.1.1`](https://github.com/lingjhf/seaweed/tree/0.1.1).
+Current production-usable release: [`v0.1.1`](https://github.com/lingjhf/seaweed/tree/v0.1.1).
 
 This project is in the `0.x` development line. Pin an exact version in production, because public APIs can still change between minor versions while the SDK is being shaped against real SeaweedFS behavior.
 
@@ -35,7 +35,7 @@ This project is in the `0.x` development line. Pin an exact version in productio
 Install the SDK:
 
 ```bash
-go get github.com/lingjhf/seaweed@0.1.1
+go get github.com/lingjhf/seaweed@v0.1.1
 ```
 
 Create a root client and upload one blob:
