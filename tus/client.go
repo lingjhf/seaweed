@@ -209,7 +209,7 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	if resp.StatusCode != http.StatusCreated {
 		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
-	location, err := resolveLocation(resp.Header.Get("Location"), resp.Request.URL)
+	location, err := resolveLocation(resp.Header.Get("Location"), responseURL(resp))
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	if resp.StatusCode != http.StatusCreated {
 		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
-	location, err := resolveLocation(resp.Header.Get("Location"), resp.Request.URL)
+	location, err := resolveLocation(resp.Header.Get("Location"), responseURL(resp))
 	if err != nil {
 		return nil, err
 	}
@@ -476,6 +476,13 @@ func resolveLocation(location string, responseURL *url.URL) (string, error) {
 		return "", errors.New("tus: response url is required")
 	}
 	return responseURL.ResolveReference(parsed).String(), nil
+}
+
+func responseURL(resp *http.Response) *url.URL {
+	if resp == nil || resp.Request == nil {
+		return nil
+	}
+	return resp.Request.URL
 }
 
 func addMetadata(header http.Header, metadata map[string]string) {

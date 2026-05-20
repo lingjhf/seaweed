@@ -802,6 +802,37 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		}
 	})
 
+	t.Run("create relative location without response request", func(t *testing.T) {
+		client, err := tus.New(tus.Config{
+			FilerURLs: []string{"http://filer.test"},
+			BasePath:  "/.tus",
+			HTTPClient: &http.Client{
+				Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusCreated,
+						Status:     "201 Created",
+						Header: http.Header{
+							"Location": []string{"/.tus/.uploads/abc"},
+						},
+						Body: io.NopCloser(strings.NewReader("")),
+					}, nil
+				}),
+			},
+		})
+		if err != nil {
+			t.Fatalf("tus.New() error = %v", err)
+		}
+		defer client.Close()
+
+		_, err = client.Create(context.Background(), "/file", tus.CreateOptions{Size: 1})
+		if err == nil {
+			t.Fatal("Create() error = nil, want response url error")
+		}
+		if !strings.Contains(err.Error(), "response url is required") {
+			t.Fatalf("Create() error = %q, want response url context", err.Error())
+		}
+	})
+
 	t.Run("create with upload invalid location", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Location", "relative")
