@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -162,6 +163,69 @@ func TestTUSMultiFilerUploadLocationAffinityIntegration(t *testing.T) {
 	}
 }
 
+func TestTUSSeaweedFSStatusBoundariesIntegration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cluster := testweed.StartMasterVolumeFiler(t, ctx)
+	client, err := seaweed.New(seaweed.Config{
+		MasterURLs: []string{cluster.MasterURL},
+		FilerURLs:  []string{cluster.FilerURL},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	options, err := client.TUS().Options(ctx, tus.OptionsOptions{})
+	if err != nil {
+		t.Fatalf("Options() error = %v", err)
+	}
+
+	assertRawTusStatus(t, ctx, http.MethodPost, cluster.FilerURL+"/.tus/status/missing-version.bin", nil, map[string]string{
+		"Upload-Length": "1",
+	}, http.StatusPreconditionFailed)
+
+	assertRawTusStatus(t, ctx, http.MethodPost, cluster.FilerURL+"/.tus/status/missing-length.bin", nil, map[string]string{
+		"Tus-Resumable": tus.Version,
+	}, http.StatusBadRequest)
+
+	assertRawTusStatus(t, ctx, http.MethodPost, cluster.FilerURL+"/.tus/", nil, map[string]string{
+		"Tus-Resumable": tus.Version,
+		"Upload-Length": "1",
+	}, http.StatusBadRequest)
+
+	assertRawTusStatus(t, ctx, http.MethodPost, cluster.FilerURL+"/.tus/status/too-large.bin", nil, map[string]string{
+		"Tus-Resumable": tus.Version,
+		"Upload-Length": fmt.Sprintf("%d", options.MaxSize+1),
+	}, http.StatusRequestEntityTooLarge)
+
+	created, err := client.TUS().Create(ctx, "/status/wrong-content-type.bin", tus.CreateOptions{Size: 4})
+	if err != nil {
+		t.Fatalf("Create wrong-content-type upload error = %v", err)
+	}
+	assertRawTusStatus(t, ctx, http.MethodPatch, created.Location, strings.NewReader("ab"), map[string]string{
+		"Tus-Resumable": tus.Version,
+		"Upload-Offset": "0",
+		"Content-Type":  "text/plain",
+	}, http.StatusUnsupportedMediaType)
+
+	mismatch, err := client.TUS().Create(ctx, "/status/offset-mismatch.bin", tus.CreateOptions{Size: 4})
+	if err != nil {
+		t.Fatalf("Create offset-mismatch upload error = %v", err)
+	}
+	assertRawTusStatus(t, ctx, http.MethodPatch, mismatch.Location, strings.NewReader("ab"), map[string]string{
+		"Tus-Resumable": tus.Version,
+		"Upload-Offset": "1",
+		"Content-Type":  "application/offset+octet-stream",
+	}, http.StatusConflict)
+
+	assertRawTusStatus(t, ctx, http.MethodHead, cluster.FilerURL+"/.tus/.uploads/missing", nil, map[string]string{
+		"Tus-Resumable": tus.Version,
+	}, http.StatusNotFound)
+	assertRawTusStatus(t, ctx, http.MethodDelete, cluster.FilerURL+"/.tus/.uploads/missing", nil, map[string]string{
+		"Tus-Resumable": tus.Version,
+	}, http.StatusNoContent)
+}
+
 func assertFilerContent(t *testing.T, ctx context.Context, client *seaweed.Client, path string, want string) {
 	t.Helper()
 
@@ -176,6 +240,27 @@ func assertFilerContent(t *testing.T, ctx context.Context, client *seaweed.Clien
 	}
 	if string(body) != want {
 		t.Fatalf("content = %q, want %q", body, want)
+	}
+}
+
+func assertRawTusStatus(t *testing.T, ctx context.Context, method string, rawURL string, body io.Reader, header map[string]string, want int) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
+	if err != nil {
+		t.Fatalf("new %s %s request: %v", method, rawURL, err)
+	}
+	for key, value := range header {
+		req.Header.Set(key, value)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s error = %v", method, rawURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != want {
+		responseBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("%s %s status = %d body %q, want %d", method, rawURL, resp.StatusCode, responseBody, want)
 	}
 }
 
