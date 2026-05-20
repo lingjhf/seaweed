@@ -102,7 +102,9 @@ func TestDoSetsHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
@@ -183,7 +185,10 @@ func TestDoValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.Do(context.Background(), tt.request)
+			resp, err := client.Do(context.Background(), tt.request)
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
 			if err == nil {
 				t.Fatal("Do() error = nil, want error")
 			}
@@ -234,7 +239,9 @@ func TestDoAddsQueryAndRequestHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
@@ -268,7 +275,9 @@ func TestDoRetriesRetryableResponses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
@@ -294,10 +303,13 @@ func TestDoReturnsContextErrorDuringRetryWait(t *testing.T) {
 			Wait:        time.Hour,
 		},
 	})
-	_, err := client.Do(ctx, httpx.Request{
+	resp, err := client.Do(ctx, httpx.Request{
 		Method: http.MethodGet,
 		URL:    server.URL,
 	})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Do() error = %v, want context deadline", err)
 	}
@@ -327,7 +339,9 @@ func TestDoDoesNotRetryNonRetryableMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", resp.StatusCode)
 	}
@@ -357,10 +371,14 @@ func TestDoEndpointReturnsLastTransportError(t *testing.T) {
 			Wait:        time.Nanosecond,
 		},
 	})
-	if _, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+	resp, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
 		ContentLength: -1,
-	}); err == nil {
+	})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("DoEndpoint() error = nil, want transport error")
 	}
 }
@@ -403,7 +421,7 @@ func TestDoEndpointFailsOverRetryableRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() error = %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
@@ -418,7 +436,7 @@ func TestDoEndpointFailsOverRetryableRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() after promotion error = %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if firstCalls != 1 || secondCalls != 2 {
 		t.Fatalf("calls after promotion = %d/%d, want 1/2", firstCalls, secondCalls)
 	}
@@ -455,7 +473,7 @@ func TestDoEndpointRoundRobinStartsAtNextEndpoint(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DoEndpoint() error = %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if firstCalls != 2 || secondCalls != 2 {
 		t.Fatalf("round robin calls = %d/%d, want 2/2", firstCalls, secondCalls)
@@ -494,7 +512,7 @@ func TestDoEndpointDoesNotFailOverNonRetryableRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() error = %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", resp.StatusCode)
 	}
@@ -532,7 +550,9 @@ func TestDoEndpointFailsOverTransportErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
@@ -568,7 +588,9 @@ func TestDoEndpointReturnsLastRetryableResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", resp.StatusCode)
 	}
@@ -615,7 +637,7 @@ func TestDoEndpointCircuitBreakerSkipsOpenEndpoint(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DoEndpoint() error = %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if firstCalls != 1 || secondCalls != 2 {
 		t.Fatalf("calls = %d/%d, want first skipped after opening breaker", firstCalls, secondCalls)
@@ -664,7 +686,7 @@ func TestDoEndpointCircuitBreakerHalfOpenAfterTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() error = %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	time.Sleep(20 * time.Millisecond)
 	resp, err = client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
@@ -673,7 +695,7 @@ func TestDoEndpointCircuitBreakerHalfOpenAfterTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() after timeout error = %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if firstCalls != 2 {
 		t.Fatalf("first calls = %d, want half-open retry after timeout", firstCalls)
 	}
@@ -710,11 +732,15 @@ func TestDoEndpointReturnsNoAvailableEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoEndpoint() error = %v", err)
 	}
-	resp.Body.Close()
-	if _, err := client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
+	_ = resp.Body.Close()
+	resp, err = client.DoEndpoint(context.Background(), endpoints, "/status", httpx.Request{
 		Method:        http.MethodGet,
 		ContentLength: -1,
-	}); err == nil || !strings.Contains(err.Error(), "no available endpoints") {
+	})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "no available endpoints") {
 		t.Fatalf("DoEndpoint() after open breaker error = %v, want no available endpoints", err)
 	}
 }
@@ -723,7 +749,11 @@ func TestDoEndpointRequiresEndpoints(t *testing.T) {
 	t.Parallel()
 
 	client := httpx.NewClient(httpx.Config{HTTPClient: http.DefaultClient})
-	if _, err := client.DoEndpoint(context.Background(), nil, "/status", httpx.Request{Method: http.MethodGet}); err == nil {
+	resp, err := client.DoEndpoint(context.Background(), nil, "/status", httpx.Request{Method: http.MethodGet})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("DoEndpoint() error = nil, want endpoints error")
 	}
 }

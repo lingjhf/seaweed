@@ -21,8 +21,8 @@ func BenchmarkEscapePath(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		for _, path := range paths {
-			if _, err := escapePath(path); err != nil {
-				b.Fatal(err)
+			if escaped := escapePath(path); escaped == "" {
+				b.Fatal("empty escaped path")
 			}
 		}
 	}

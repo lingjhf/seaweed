@@ -2,6 +2,7 @@ package volume
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,7 +138,7 @@ type VolumeTTL struct {
 // New creates a volume client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
-		return nil, fmt.Errorf("volume: base urls are required")
+		return nil, errors.New("volume: base urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
@@ -201,7 +202,9 @@ func (c *Client) Get(ctx context.Context, fileID string, opts GetOptions) (*http
 		return nil, err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 		return nil, httpx.ResponseError(http.MethodGet, resp.Request.URL.String(), resp)
 	}
 	return resp, nil
@@ -222,7 +225,9 @@ func (c *Client) Head(ctx context.Context, fileID string, opts HeadOptions) (htt
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
@@ -265,7 +270,7 @@ func (c *Client) Health(ctx context.Context) error {
 func (c *Client) filePath(fileID string) (string, error) {
 	fileID = strings.TrimLeft(fileID, "/")
 	if fileID == "" {
-		return "", fmt.Errorf("volume: file id is required")
+		return "", errors.New("volume: file id is required")
 	}
 	return "/" + fileID, nil
 }

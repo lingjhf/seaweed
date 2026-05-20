@@ -144,7 +144,10 @@ func TestAWSEndpointMiddlewareBranches(t *testing.T) {
 		t.Fatalf("finalize calls = %d, want 1", finalizeCalls)
 	}
 
-	req := smithyhttp.NewStackRequest().(*smithyhttp.Request)
+	req, ok := smithyhttp.NewStackRequest().(*smithyhttp.Request)
+	if !ok {
+		t.Fatal("NewStackRequest() did not return *smithyhttp.Request")
+	}
 	req.URL = mustParseURL(t, "http://other.example.test/")
 	_, _, err = attemptMiddleware.HandleFinalize(context.Background(), middleware.FinalizeInput{
 		Request: req,
@@ -193,7 +196,10 @@ func TestAWSEndpointAttemptMiddlewareRecordsFinalizeError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpointSetWithPolicy() error = %v", err)
 	}
-	req := smithyhttp.NewStackRequest().(*smithyhttp.Request)
+	req, ok := smithyhttp.NewStackRequest().(*smithyhttp.Request)
+	if !ok {
+		t.Fatal("NewStackRequest() did not return *smithyhttp.Request")
+	}
 	req.URL = mustParseURL(t, "http://example.test/")
 	_, _, err = (awsEndpointAttemptMiddleware{endpoints: endpoints}).HandleFinalize(context.Background(), middleware.FinalizeInput{
 		Request: req,

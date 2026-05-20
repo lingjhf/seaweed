@@ -2,6 +2,7 @@ package seaweed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -44,10 +45,10 @@ func New(config Config, opts ...Option) (*Client, error) {
 		opt(&applied)
 	}
 	if applied.httpClient == nil {
-		return nil, fmt.Errorf("seaweed: http client is nil")
+		return nil, errors.New("seaweed: http client is nil")
 	}
 	if len(config.MasterURLs) == 0 {
-		return nil, fmt.Errorf("seaweed: master urls are required")
+		return nil, errors.New("seaweed: master urls are required")
 	}
 	if config.TUSBasePath == "" {
 		config.TUSBasePath = defaultTUSBasePath
@@ -272,7 +273,7 @@ func (c *Client) Close() {
 // S3 returns an AWS SDK S3 client configured for SeaweedFS path-style requests.
 func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
 	if c.s3Endpoints == nil {
-		return nil, fmt.Errorf("seaweed: s3 urls are required")
+		return nil, errors.New("seaweed: s3 urls are required")
 	}
 	cfg, err := c.awsConfig(ctx)
 	if err != nil {
@@ -289,7 +290,7 @@ func (c *Client) S3(ctx context.Context) (*s3.Client, error) {
 // IAM returns an AWS SDK IAM client configured for SeaweedFS.
 func (c *Client) IAM(ctx context.Context) (*iam.Client, error) {
 	if c.iamEndpoints == nil {
-		return nil, fmt.Errorf("seaweed: iam urls or s3 urls are required")
+		return nil, errors.New("seaweed: iam urls or s3 urls are required")
 	}
 	cfg, err := c.awsConfig(ctx)
 	if err != nil {
@@ -304,7 +305,7 @@ func (c *Client) IAM(ctx context.Context) (*iam.Client, error) {
 
 func (c *Client) awsConfig(ctx context.Context) (aws.Config, error) {
 	if c.config.AccessKeyID == "" || c.config.SecretAccessKey == "" {
-		return aws.Config{}, fmt.Errorf("seaweed: access key id and secret access key are required")
+		return aws.Config{}, errors.New("seaweed: access key id and secret access key are required")
 	}
 	return awsconfig.LoadDefaultConfig(
 		ctx,

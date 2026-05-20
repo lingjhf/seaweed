@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,15 +89,12 @@ func NewClient(config Config) *Client {
 // Do sends request through the configured HTTP client.
 func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error) {
 	if request.Method == "" {
-		return nil, fmt.Errorf("httpx: method is required")
+		return nil, errors.New("httpx: method is required")
 	}
 	if request.URL == "" {
-		return nil, fmt.Errorf("httpx: url is required")
+		return nil, errors.New("httpx: url is required")
 	}
-	attempts := c.retry.MaxAttempts
-	if attempts < 1 {
-		attempts = 1
-	}
+	attempts := max(c.retry.MaxAttempts, 1)
 
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
@@ -119,7 +117,7 @@ func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error
 			return resp, nil
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		timer := time.NewTimer(c.retry.Wait)
@@ -136,11 +134,11 @@ func (c *Client) Do(ctx context.Context, request Request) (*http.Response, error
 // DoEndpoint sends request to an endpoint selected from endpoints.
 func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request) (*http.Response, error) {
 	if endpoints == nil {
-		return nil, fmt.Errorf("httpx: endpoints are required")
+		return nil, errors.New("httpx: endpoints are required")
 	}
 	candidates := endpoints.Candidates(path)
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("httpx: no available endpoints")
+		return nil, errors.New("httpx: no available endpoints")
 	}
 	if !isRetryableMethod(request.Method) {
 		candidates = candidates[:1]
@@ -171,14 +169,14 @@ func (c *Client) DoEndpoint(ctx context.Context, endpoints *EndpointSet, path st
 		if err != nil {
 			lastErr = err
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 	}
 	if lastErr == nil {
-		return nil, fmt.Errorf("httpx: no available endpoints")
+		return nil, errors.New("httpx: no available endpoints")
 	}
 	return nil, lastErr
 }
@@ -189,7 +187,9 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return ResponseError(request.Method, responseURL(resp, request.URL), resp)
@@ -199,8 +199,25 @@ func (c *Client) DecodeJSON(ctx context.Context, request Request, out any) error
 
 // DecodeJSONEndpoint sends request through endpoints and decodes JSON into out.
 func (c *Client) DecodeJSONEndpoint(ctx context.Context, endpoints *EndpointSet, path string, request Request, out any) error {
-	_, err := c.DecodeJSONEndpointWithResponse(ctx, endpoints, path, request, out)
+	_, err := c.DecodeJSONEndpointWithHeader(ctx, endpoints, path, request, out)
 	return err
+}
+
+// DecodeJSONEndpointWithHeader sends request through endpoints, decodes JSON
+// into out, and returns response headers for callers that need metadata.
+func (c *Client) DecodeJSONEndpointWithHeader(ctx context.Context, endpoints *EndpointSet, path string, request Request, out any) (http.Header, error) {
+	resp, err := c.DoEndpoint(ctx, endpoints, path, request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return resp.Header, ResponseError(request.Method, responseURL(resp, request.URL), resp)
+	}
+	return resp.Header, decodeJSONResponse(resp, request, out)
 }
 
 // DecodeJSONEndpointWithResponse sends request through endpoints, decodes JSON
@@ -210,7 +227,9 @@ func (c *Client) DecodeJSONEndpointWithResponse(ctx context.Context, endpoints *
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return resp, ResponseError(request.Method, responseURL(resp, request.URL), resp)
@@ -224,7 +243,9 @@ func (c *Client) CheckStatus(ctx context.Context, request Request, expected ...i
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if slices.Contains(expected, resp.StatusCode) {
 		return checkStatusResponse(resp, request)
@@ -238,7 +259,9 @@ func (c *Client) CheckStatusEndpoint(ctx context.Context, endpoints *EndpointSet
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if slices.Contains(expected, resp.StatusCode) {
 		return checkStatusResponse(resp, request)
@@ -350,13 +373,13 @@ func apiErrorFromBody(resp *http.Response, request Request, body []byte) *APIErr
 	return nil
 }
 
-// IsHTTPStatus reports whether err is an Error with a status in [min, max].
-func IsHTTPStatus(err error, min int, max int) bool {
-	httpErr, ok := err.(*Error)
-	if !ok {
+// IsHTTPStatus reports whether err is an Error with a status in [minStatus, maxStatus].
+func IsHTTPStatus(err error, minStatus int, maxStatus int) bool {
+	var httpErr *Error
+	if !errors.As(err, &httpErr) {
 		return false
 	}
-	return httpErr.StatusCode >= min && httpErr.StatusCode <= max
+	return httpErr.StatusCode >= minStatus && httpErr.StatusCode <= maxStatus
 }
 
 func isRetryableMethod(method string) bool {

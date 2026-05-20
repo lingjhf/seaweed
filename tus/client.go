@@ -3,6 +3,7 @@ package tus
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,7 +108,7 @@ type TerminateOptions struct {
 // New creates a TUS client.
 func New(config Config) (*Client, error) {
 	if len(config.FilerURLs) == 0 {
-		return nil, fmt.Errorf("tus: filer urls are required")
+		return nil, errors.New("tus: filer urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
@@ -144,12 +145,9 @@ func New(config Config) (*Client, error) {
 
 // Options returns server TUS capability headers.
 func (c *Client) Options(ctx context.Context, opts OptionsOptions) (*Options, error) {
-	path, err := c.baseURL("/")
-	if err != nil {
-		return nil, err
-	}
+	path := c.baseURL("/")
 	header := c.baseHeader()
-	addHeader(header, "Authorization", opts.Authorization)
+	addAuthorizationHeader(header, opts.Authorization)
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodOptions,
 		Header:        header,
@@ -158,7 +156,9 @@ func (c *Client) Options(ctx context.Context, opts OptionsOptions) (*Options, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return nil, httpx.ResponseError(http.MethodOptions, resp.Request.URL.String(), resp)
 	}
@@ -176,13 +176,10 @@ func (c *Client) Options(ctx context.Context, opts OptionsOptions) (*Options, er
 
 // Create creates an upload resource without sending file bytes.
 func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptions) (*Upload, error) {
-	path, err := c.baseURL(targetPath)
-	if err != nil {
-		return nil, err
-	}
+	path := c.baseURL(targetPath)
 	header := c.baseHeader()
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
-	addHeader(header, "Authorization", opts.Authorization)
+	addAuthorizationHeader(header, opts.Authorization)
 	addMetadata(header, opts.Metadata)
 
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
@@ -193,7 +190,9 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusCreated {
 		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
@@ -214,14 +213,11 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 
 // CreateWithUpload creates an upload resource and sends the body in the create request.
 func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body io.Reader, opts CreateOptions) (*Upload, error) {
-	path, err := c.baseURL(targetPath)
-	if err != nil {
-		return nil, err
-	}
+	path := c.baseURL(targetPath)
 	header := c.baseHeader()
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
 	header.Set("Content-Type", c.contentType)
-	addHeader(header, "Authorization", opts.Authorization)
+	addAuthorizationHeader(header, opts.Authorization)
 	addMetadata(header, opts.Metadata)
 
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
@@ -233,7 +229,9 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusCreated {
 		return nil, httpx.ResponseError(http.MethodPost, resp.Request.URL.String(), resp)
 	}
@@ -259,7 +257,7 @@ func (c *Client) Head(ctx context.Context, location string, opts HeadOptions) (*
 		return nil, err
 	}
 	header := c.baseHeader()
-	addHeader(header, "Authorization", opts.Authorization)
+	addAuthorizationHeader(header, opts.Authorization)
 	request := httpx.Request{
 		Method:        http.MethodHead,
 		Header:        header,
@@ -275,7 +273,9 @@ func (c *Client) Head(ctx context.Context, location string, opts HeadOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
@@ -299,7 +299,7 @@ func (c *Client) Patch(ctx context.Context, location string, offset int64, body 
 	header := c.baseHeader()
 	header.Set("Upload-Offset", strconv.FormatInt(offset, 10))
 	header.Set("Content-Type", c.contentType)
-	addHeader(header, "Authorization", opts.Authorization)
+	addAuthorizationHeader(header, opts.Authorization)
 	request := httpx.Request{
 		Method:        http.MethodPatch,
 		Header:        header,
@@ -316,7 +316,9 @@ func (c *Client) Patch(ctx context.Context, location string, offset int64, body 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusNoContent {
 		return nil, httpx.ResponseError(http.MethodPatch, resp.Request.URL.String(), resp)
 	}
@@ -334,7 +336,7 @@ func (c *Client) Terminate(ctx context.Context, location string, opts TerminateO
 		return err
 	}
 	header := c.baseHeader()
-	addHeader(header, "Authorization", opts.Authorization)
+	addAuthorizationHeader(header, opts.Authorization)
 	request := httpx.Request{
 		Method:        http.MethodDelete,
 		Header:        header,
@@ -350,7 +352,7 @@ func (c *Client) Terminate(ctx context.Context, location string, opts TerminateO
 // Upload uploads body, using creation-with-upload unless ChunkSize is positive.
 func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, opts UploadOptions) (*Upload, error) {
 	if opts.Size < 0 {
-		return nil, fmt.Errorf("tus: size must be non-negative")
+		return nil, errors.New("tus: size must be non-negative")
 	}
 	if opts.ChunkSize <= 0 {
 		return c.CreateWithUpload(ctx, targetPath, body, CreateOptions{
@@ -415,23 +417,20 @@ func (c *Client) baseHeader() http.Header {
 	}
 }
 
-func addHeader(header http.Header, key string, value string) {
+func addAuthorizationHeader(header http.Header, value string) {
 	if value != "" {
-		header.Set(key, value)
+		header.Set("Authorization", value)
 	}
 }
 
-func (c *Client) baseURL(path string) (string, error) {
-	escaped, err := escapePath(path)
-	if err != nil {
-		return "", err
-	}
-	return c.basePath + escaped, nil
+func (c *Client) baseURL(path string) string {
+	escaped := escapePath(path)
+	return c.basePath + escaped
 }
 
 func (c *Client) uploadURL(location string) (string, bool, error) {
 	if location == "" {
-		return "", false, fmt.Errorf("tus: location is required")
+		return "", false, errors.New("tus: location is required")
 	}
 	parsed, err := url.Parse(location)
 	if err != nil {
@@ -441,14 +440,14 @@ func (c *Client) uploadURL(location string) (string, bool, error) {
 		return parsed.String(), false, nil
 	}
 	if !strings.HasPrefix(location, "/") {
-		return "", false, fmt.Errorf("tus: relative location must start with /")
+		return "", false, errors.New("tus: relative location must start with /")
 	}
 	return location, true, nil
 }
 
 func (c *Client) resolveLocation(location string) (string, error) {
 	if location == "" {
-		return "", fmt.Errorf("tus: location is empty")
+		return "", errors.New("tus: location is empty")
 	}
 	parsed, err := url.Parse(location)
 	if err != nil {
@@ -458,7 +457,7 @@ func (c *Client) resolveLocation(location string) (string, error) {
 		return parsed.String(), nil
 	}
 	if !strings.HasPrefix(location, "/") {
-		return "", fmt.Errorf("tus: relative location must start with /")
+		return "", errors.New("tus: relative location must start with /")
 	}
 	return c.endpoints.URL(location), nil
 }
@@ -483,7 +482,7 @@ func addMetadata(header http.Header, metadata map[string]string) {
 
 func parseIntHeader(value string) (int64, error) {
 	if value == "" {
-		return 0, fmt.Errorf("tus: missing integer header")
+		return 0, errors.New("tus: missing integer header")
 	}
 	out, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
@@ -503,14 +502,14 @@ func parseOptionalIntHeader(value string) (int64, error) {
 	return out, nil
 }
 
-func escapePath(path string) (string, error) {
+func escapePath(path string) string {
 	if strings.TrimSpace(path) == "" || path == "/" {
-		return "/", nil
+		return "/"
 	}
 	hasTrailingSlash := strings.HasSuffix(path, "/")
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" {
-		return "/", nil
+		return "/"
 	}
 	var builder strings.Builder
 	builder.Grow(len(path) + 8)
@@ -536,7 +535,7 @@ func escapePath(path string) (string, error) {
 	if hasTrailingSlash && wrote {
 		builder.WriteByte('/')
 	}
-	return builder.String(), nil
+	return builder.String()
 }
 
 // Close stops background endpoint health checks.

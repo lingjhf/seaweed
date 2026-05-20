@@ -334,7 +334,7 @@ func TestRequestsUsePerRequestAuthorization(t *testing.T) {
 			call: func(ctx context.Context, client *filer.Client) error {
 				resp, err := client.Get(ctx, "/docs/report.txt", filer.GetOptions{Authorization: requestAuth})
 				if resp != nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 				return err
 			},
@@ -369,7 +369,9 @@ func TestRequestsUsePerRequestAuthorization(t *testing.T) {
 				return err
 			},
 			respond: func(w http.ResponseWriter) {
-				_ = json.NewEncoder(w).Encode(map[string]any{"FullPath": "/docs/report.txt"})
+				if err := json.NewEncoder(w).Encode(map[string]string{"FullPath": "/docs/report.txt"}); err != nil {
+					t.Fatalf("encode stat response: %v", err)
+				}
 			},
 		},
 		{
@@ -444,7 +446,6 @@ func TestRequestsUsePerRequestAuthorization(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != tt.wantMethod {
@@ -750,7 +751,7 @@ func TestMkdirGetHeadStatAndDeleteRequests(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
@@ -960,7 +961,11 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("filer.New() error = %v", err)
 	}
-	if _, err := clientWithBaseURL.Get(context.Background(), "", filer.GetOptions{}); err == nil {
+	resp, err := clientWithBaseURL.Get(context.Background(), "", filer.GetOptions{})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("Get() error = nil, want path error")
 	}
 	if _, err := clientWithBaseURL.ListPage(context.Background(), "", filer.ListOptions{}); err == nil {
@@ -973,28 +978,28 @@ func TestValidationAndHTTPErrorResponses(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	resp, err := client.Get(context.Background(), "/missing.txt", filer.GetOptions{})
+	resp, err = client.Get(context.Background(), "/missing.txt", filer.GetOptions{})
 	if err == nil {
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		t.Fatal("Get() error = nil, want status error")
 	}
-	assertHTTPStatus(t, err, http.StatusNotFound)
+	assertNotFound(t, err)
 	header, err := client.Head(context.Background(), "/missing.txt", filer.HeadOptions{})
 	if err == nil {
 		t.Fatalf("Head() = %v, nil, want status error", header)
 	}
-	assertHTTPStatus(t, err, http.StatusNotFound)
+	assertNotFound(t, err)
 	if _, err := client.Tags(context.Background(), "/missing.txt", filer.HeadOptions{}); err == nil {
 		t.Fatal("Tags() error = nil, want status error")
 	} else {
-		assertHTTPStatus(t, err, http.StatusNotFound)
+		assertNotFound(t, err)
 	}
 	if err := client.Delete(context.Background(), "/missing.txt", filer.DeleteOptions{}); err == nil {
 		t.Fatal("Delete() error = nil, want status error")
 	} else {
-		assertHTTPStatus(t, err, http.StatusNotFound)
+		assertNotFound(t, err)
 	}
 }
 
@@ -1065,9 +1070,11 @@ func writeResultResponse(name string, size int64) func(http.ResponseWriter) {
 }
 
 func listPageResponse(w http.ResponseWriter) {
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"Entries": []map[string]any{},
-	})
+	if err := json.NewEncoder(w).Encode(map[string][]map[string]string{
+		"Entries": {},
+	}); err != nil {
+		panic(err)
+	}
 }
 
 func newTestClient(t *testing.T, server *httptest.Server) *filer.Client {
@@ -1089,14 +1096,14 @@ func assertQuery(t *testing.T, got string, want string) {
 	}
 }
 
-func assertHTTPStatus(t *testing.T, err error, want int) {
+func assertNotFound(t *testing.T, err error) {
 	t.Helper()
 	var httpErr *httpx.Error
 	if !errors.As(err, &httpErr) {
 		t.Fatalf("error type = %T, want *httpx.Error", err)
 	}
-	if httpErr.StatusCode != want {
-		t.Fatalf("status = %d, want %d", httpErr.StatusCode, want)
+	if httpErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", httpErr.StatusCode, http.StatusNotFound)
 	}
 }
 

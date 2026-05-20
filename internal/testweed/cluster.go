@@ -49,8 +49,8 @@ func startMasterVolume(t *testing.T, ctx context.Context, securityTOML string) *
 
 	weed := findWeedBinary(t)
 	dataDir := t.TempDir()
-	masterPort, masterGRPCPort := freePortPair(t)
-	volumePort, volumeGRPCPort := freeDistinctPortPair(t, masterPort, masterGRPCPort)
+	masterPort, masterGRPCPort := freePortPair(t, ctx)
+	volumePort, volumeGRPCPort := freeDistinctPortPair(t, ctx, masterPort, masterGRPCPort)
 
 	cluster := &Cluster{
 		MasterURL:     fmt.Sprintf("http://127.0.0.1:%d", masterPort),
@@ -66,8 +66,8 @@ func startMasterVolume(t *testing.T, ctx context.Context, securityTOML string) *
 	writeSecurityConfig(t, dataDir, securityTOML)
 
 	cluster.start(t, ctx, weed, "master",
-		"-port", fmt.Sprint(masterPort),
-		"-port.grpc", fmt.Sprint(masterGRPCPort),
+		"-port", strconv.Itoa(masterPort),
+		"-port.grpc", strconv.Itoa(masterGRPCPort),
 		"-mdir", masterDir,
 		"-ip", "127.0.0.1",
 		"-peers", "none",
@@ -75,8 +75,8 @@ func startMasterVolume(t *testing.T, ctx context.Context, securityTOML string) *
 	cluster.waitForHTTP(t, ctx, cluster.MasterURL+"/cluster/healthz")
 
 	cluster.start(t, ctx, weed, "volume",
-		"-port", fmt.Sprint(volumePort),
-		"-port.grpc", fmt.Sprint(volumeGRPCPort),
+		"-port", strconv.Itoa(volumePort),
+		"-port.grpc", strconv.Itoa(volumeGRPCPort),
 		"-dir", volumeDir,
 		"-max", "8",
 		"-mserver", fmt.Sprintf("127.0.0.1:%d", masterPort),
@@ -93,15 +93,15 @@ func StartMasterVolumeFiler(t *testing.T, ctx context.Context) *Cluster {
 	t.Helper()
 
 	cluster := StartMasterVolume(t, ctx)
-	filerPort, filerGRPCPort := freeDistinctPortPair(t, cluster.usedPorts()...)
+	filerPort, filerGRPCPort := freeDistinctPortPair(t, ctx, cluster.usedPorts()...)
 	filerDir := filepath.Join(cluster.dataDir, "filer")
 	mkdir(t, filerDir)
 
 	cluster.FilerURL = fmt.Sprintf("http://127.0.0.1:%d", filerPort)
 	cluster.filerAddress = fmt.Sprintf("127.0.0.1:%d", filerPort)
 	cluster.start(t, ctx, findWeedBinary(t), "filer",
-		"-port", fmt.Sprint(filerPort),
-		"-port.grpc", fmt.Sprint(filerGRPCPort),
+		"-port", strconv.Itoa(filerPort),
+		"-port.grpc", strconv.Itoa(filerGRPCPort),
 		"-master", cluster.masterAddress,
 		"-ip", "127.0.0.1",
 		"-defaultStoreDir", filerDir,
@@ -125,14 +125,14 @@ func (c *Cluster) StartS3(t *testing.T, ctx context.Context) string {
 	if c.filerAddress == "" {
 		t.Fatal("testweed: filer must be started before s3")
 	}
-	s3Port, s3GRPCPort := freeDistinctPortPair(t, c.usedPorts()...)
+	s3Port, s3GRPCPort := freeDistinctPortPair(t, ctx, c.usedPorts()...)
 	s3URL := fmt.Sprintf("http://127.0.0.1:%d", s3Port)
 	c.startWithEnv(t, ctx, findWeedBinary(t), []string{
 		"AWS_ACCESS_KEY_ID=seaweed_admin",
 		"AWS_SECRET_ACCESS_KEY=seaweed_secret",
 	}, "s3",
-		"-port", fmt.Sprint(s3Port),
-		"-port.grpc", fmt.Sprint(s3GRPCPort),
+		"-port", strconv.Itoa(s3Port),
+		"-port.grpc", strconv.Itoa(s3GRPCPort),
 		"-port.iceberg", "0",
 		"-ip.bind", "127.0.0.1",
 		"-filer", c.filerAddress,
@@ -147,8 +147,7 @@ func (c *Cluster) StartS3(t *testing.T, ctx context.Context) string {
 }
 
 func (c *Cluster) Stop() {
-	for i := len(c.cmds) - 1; i >= 0; i-- {
-		cmd := c.cmds[i]
+	for _, cmd := range slices.Backward(c.cmds) {
 		if cmd.Process == nil {
 			continue
 		}
@@ -277,35 +276,36 @@ func assertExecutable(t *testing.T, path string) {
 	}
 }
 
-func freePortPair(t *testing.T) (int, int) {
+func freePortPair(t *testing.T, ctx context.Context) (int, int) {
 	t.Helper()
 
 	start := 20000 + int((time.Now().UnixNano()+int64(os.Getpid()*137))%20000)
+	listenConfig := net.ListenConfig{}
 	for offset := range 20000 {
 		port := 20000 + (start+offset)%20000
 		grpcPort := port + 10000
-		httpListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		httpListener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 		if err != nil {
 			continue
 		}
-		grpcListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", grpcPort))
+		grpcListener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", grpcPort))
 		if err != nil {
-			httpListener.Close()
+			_ = httpListener.Close()
 			continue
 		}
-		httpListener.Close()
-		grpcListener.Close()
+		_ = httpListener.Close()
+		_ = grpcListener.Close()
 		return port, grpcPort
 	}
 	t.Fatal("allocate port pair")
 	return 0, 0
 }
 
-func freeDistinctPortPair(t *testing.T, used ...int) (int, int) {
+func freeDistinctPortPair(t *testing.T, ctx context.Context, used ...int) (int, int) {
 	t.Helper()
 
 	for {
-		port, grpcPort := freePortPair(t)
+		port, grpcPort := freePortPair(t, ctx)
 		if portIsUsed(port, used) || portIsUsed(grpcPort, used) {
 			time.Sleep(time.Millisecond)
 			continue
@@ -321,7 +321,7 @@ func portIsUsed(port int, used []int) bool {
 func mkdir(t *testing.T, path string) {
 	t.Helper()
 
-	if err := os.MkdirAll(path, 0755); err != nil {
+	if err := os.MkdirAll(path, 0750); err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
 }
@@ -350,7 +350,7 @@ func (c *Cluster) waitForHTTP(t *testing.T, ctx context.Context, rawURL string) 
 		}
 		resp, err := client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusInternalServerError {
 				return
 			}
@@ -380,7 +380,7 @@ func (c *Cluster) waitForAssignableVolume(t *testing.T, ctx context.Context) {
 		resp, err := client.Do(req)
 		if err == nil {
 			body, readErr := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if readErr == nil && resp.StatusCode == http.StatusOK && hasAssignedFID(body) {
 				successes++
 				if successes == 2 {
@@ -421,7 +421,8 @@ func (c *Cluster) dumpLogs(t *testing.T) {
 
 func (c *Cluster) usedPorts() []int {
 	ports := []int{}
-	rawURLs := []string{c.MasterURL, c.VolumeURL, c.FilerURL}
+	rawURLs := make([]string, 0, 3+len(c.S3URLs))
+	rawURLs = append(rawURLs, c.MasterURL, c.VolumeURL, c.FilerURL)
 	rawURLs = append(rawURLs, c.S3URLs...)
 	for _, rawURL := range rawURLs {
 		if rawURL == "" {

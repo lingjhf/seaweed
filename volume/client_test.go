@@ -143,7 +143,9 @@ func TestGetReturnsStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
@@ -169,7 +171,9 @@ func TestGetSendsRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
@@ -218,7 +222,7 @@ func TestGetAndHeadSendReadOptions(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil
 			},
 		},
@@ -416,7 +420,7 @@ func TestHTTPErrorResponses(t *testing.T) {
 	resp, err := client.Get(context.Background(), "3,abc", volume.GetOptions{})
 	if err == nil {
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		t.Fatal("Get() error = nil, want error")
 	}
@@ -482,7 +486,11 @@ func TestBaseURLsAndFileIDValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("volume.New() error = %v", err)
 	}
-	if _, err := clientWithBaseURL.Get(context.Background(), "", volume.GetOptions{}); err == nil {
+	resp, err := clientWithBaseURL.Get(context.Background(), "", volume.GetOptions{})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("Get() error = nil, want file id error")
 	}
 	if _, err := clientWithBaseURL.Put(context.Background(), "", stringsReader("body"), volume.PutOptions{}); err == nil {
@@ -525,7 +533,7 @@ func TestRequestsUsePerRequestAuthorization(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil
 			},
 		},

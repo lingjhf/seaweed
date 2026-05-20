@@ -2,6 +2,7 @@ package filer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -236,7 +237,7 @@ type FID struct {
 // New creates a filer client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
-		return nil, fmt.Errorf("filer: base urls are required")
+		return nil, errors.New("filer: base urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
@@ -271,7 +272,7 @@ func (c *Client) Append(ctx context.Context, path string, body io.Reader, opts A
 // UploadMultipart uploads body to targetPath using a streaming multipart form.
 func (c *Client) UploadMultipart(ctx context.Context, targetPath string, body io.Reader, opts MultipartUploadOptions) (*WriteResult, error) {
 	if body == nil {
-		return nil, fmt.Errorf("filer: body is required")
+		return nil, errors.New("filer: body is required")
 	}
 	filename, err := multipartFilename(targetPath, opts.Filename)
 	if err != nil {
@@ -431,7 +432,9 @@ func (c *Client) Get(ctx context.Context, path string, opts GetOptions) (*http.R
 		return nil, err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 		return nil, httpx.ResponseError(http.MethodGet, resp.Request.URL.String(), resp)
 	}
 	return resp, nil
@@ -453,7 +456,9 @@ func (c *Client) Head(ctx context.Context, path string, opts HeadOptions) (*Head
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, httpx.ResponseError(http.MethodHead, resp.Request.URL.String(), resp)
 	}
@@ -498,7 +503,7 @@ func (c *Client) Stat(ctx context.Context, path string, opts StatOptions) (*Entr
 // Walk calls fn for entries under path, following filer pagination until done.
 func (c *Client) Walk(ctx context.Context, path string, opts WalkOptions, fn func(Entry) error) error {
 	if fn == nil {
-		return fmt.Errorf("filer: walk callback is required")
+		return errors.New("filer: walk callback is required")
 	}
 	lastFileName := opts.LastFileName
 	for {
@@ -521,7 +526,7 @@ func (c *Client) Walk(ctx context.Context, path string, opts WalkOptions, fn fun
 			return nil
 		}
 		if page.LastFileName == "" {
-			return fmt.Errorf("filer: list page missing last file name")
+			return errors.New("filer: list page missing last file name")
 		}
 		if page.LastFileName == lastFileName {
 			return fmt.Errorf("filer: list page repeated last file name %q", page.LastFileName)
@@ -660,11 +665,11 @@ func multipartFilename(targetPath string, configured string) (string, error) {
 		return configured, nil
 	}
 	if strings.HasSuffix(targetPath, "/") {
-		return "", fmt.Errorf("filer: filename is required")
+		return "", errors.New("filer: filename is required")
 	}
 	filename := path.Base(strings.TrimRight(targetPath, "/"))
 	if strings.TrimSpace(filename) == "" || filename == "." || filename == "/" {
-		return "", fmt.Errorf("filer: filename is required")
+		return "", errors.New("filer: filename is required")
 	}
 	return filename, nil
 }
@@ -724,7 +729,7 @@ func addBool(query url.Values, key string, value bool) {
 
 func escapePath(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return "", fmt.Errorf("filer: path is required")
+		return "", errors.New("filer: path is required")
 	}
 	hasTrailingSlash := strings.HasSuffix(path, "/")
 	trimmed := strings.Trim(path, "/")

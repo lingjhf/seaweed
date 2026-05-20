@@ -15,247 +15,247 @@ import (
 )
 
 func TestNativeAPISurfaceAlignment(t *testing.T) {
-	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
-	readerType := reflect.TypeOf((*io.Reader)(nil)).Elem()
-	readSeekerType := reflect.TypeOf((*io.ReadSeeker)(nil)).Elem()
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
+	ctxType := reflect.TypeFor[context.Context]()
+	readerType := reflect.TypeFor[io.Reader]()
+	readSeekerType := reflect.TypeFor[io.ReadSeeker]()
+	errorType := reflect.TypeFor[error]()
 
-	requireMethod(t, reflect.TypeOf((*master.Client)(nil)), "Submit",
+	requireMethod(t, reflect.TypeFor[*master.Client](), "Submit",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
+			reflect.TypeFor[string](),
 			readerType,
-			reflect.TypeOf(master.SubmitOptions{}),
+			reflect.TypeFor[master.SubmitOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*master.SubmitResponse)(nil)),
+			reflect.TypeFor[*master.SubmitResponse](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*master.Client)(nil)), "Vacuum",
+	requireMethod(t, reflect.TypeFor[*master.Client](), "Vacuum",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(master.VacuumOptions{}),
-		},
-		[]reflect.Type{
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*master.Client)(nil)), "DeleteCollection",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(master.DeleteCollectionOptions{}),
+			reflect.TypeFor[master.VacuumOptions](),
 		},
 		[]reflect.Type{
 			errorType,
 		},
 	)
-
-	requireMethod(t, reflect.TypeOf((*volume.Client)(nil)), "Head",
+	requireMethod(t, reflect.TypeFor[*master.Client](), "DeleteCollection",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(volume.HeadOptions{}),
-		},
-		[]reflect.Type{
-			reflect.TypeOf(http.Header{}),
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*volume.Client)(nil)), "Delete",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(volume.DeleteOptions{}),
+			reflect.TypeFor[master.DeleteCollectionOptions](),
 		},
 		[]reflect.Type{
 			errorType,
 		},
 	)
 
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "UploadMultipart",
+	requireMethod(t, reflect.TypeFor[*volume.Client](), "Head",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
-			readerType,
-			reflect.TypeOf(filer.MultipartUploadOptions{}),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[volume.HeadOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*filer.WriteResult)(nil)),
+			reflect.TypeFor[http.Header](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Head",
+	requireMethod(t, reflect.TypeFor[*volume.Client](), "Delete",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(filer.HeadOptions{}),
-		},
-		[]reflect.Type{
-			reflect.TypeOf((*filer.HeadResult)(nil)),
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Tags",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(filer.HeadOptions{}),
-		},
-		[]reflect.Type{
-			reflect.TypeOf(map[string]string{}),
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Copy",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(""),
-			reflect.TypeOf(filer.CopyOptions{}),
-		},
-		[]reflect.Type{
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Move",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(""),
-			reflect.TypeOf(filer.MoveOptions{}),
-		},
-		[]reflect.Type{
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "SetTags",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(map[string]string{}),
-			reflect.TypeOf(filer.TagOptions{}),
-		},
-		[]reflect.Type{
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "DeleteTags",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(filer.TagOptions{}),
-			reflect.TypeOf([]string{}),
-		},
-		[]reflect.Type{
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*filer.Client)(nil)), "Mkdir",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(filer.MkdirOptions{}),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[volume.DeleteOptions](),
 		},
 		[]reflect.Type{
 			errorType,
 		},
 	)
 
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Options",
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "UploadMultipart",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(tus.OptionsOptions{}),
-		},
-		[]reflect.Type{
-			reflect.TypeOf((*tus.Options)(nil)),
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Create",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(tus.CreateOptions{}),
-		},
-		[]reflect.Type{
-			reflect.TypeOf((*tus.Upload)(nil)),
-			errorType,
-		},
-	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "CreateWithUpload",
-		[]reflect.Type{
-			ctxType,
-			reflect.TypeOf(""),
+			reflect.TypeFor[string](),
 			readerType,
-			reflect.TypeOf(tus.CreateOptions{}),
+			reflect.TypeFor[filer.MultipartUploadOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*tus.Upload)(nil)),
+			reflect.TypeFor[*filer.WriteResult](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Head",
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "Head",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(tus.HeadOptions{}),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[filer.HeadOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*tus.Status)(nil)),
+			reflect.TypeFor[*filer.HeadResult](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Patch",
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "Tags",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(int64(0)),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[filer.HeadOptions](),
+		},
+		[]reflect.Type{
+			reflect.TypeFor[map[string]string](),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "Copy",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[filer.CopyOptions](),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "Move",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[filer.MoveOptions](),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "SetTags",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			reflect.TypeFor[map[string]string](),
+			reflect.TypeFor[filer.TagOptions](),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "DeleteTags",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			reflect.TypeFor[filer.TagOptions](),
+			reflect.TypeFor[[]string](),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*filer.Client](), "Mkdir",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			reflect.TypeFor[filer.MkdirOptions](),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Options",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[tus.OptionsOptions](),
+		},
+		[]reflect.Type{
+			reflect.TypeFor[*tus.Options](),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Create",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			reflect.TypeFor[tus.CreateOptions](),
+		},
+		[]reflect.Type{
+			reflect.TypeFor[*tus.Upload](),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "CreateWithUpload",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
 			readerType,
-			reflect.TypeOf(int64(0)),
-			reflect.TypeOf(tus.PatchOptions{}),
+			reflect.TypeFor[tus.CreateOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*tus.Status)(nil)),
+			reflect.TypeFor[*tus.Upload](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Terminate",
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Head",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
-			reflect.TypeOf(tus.TerminateOptions{}),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[tus.HeadOptions](),
 		},
 		[]reflect.Type{
+			reflect.TypeFor[*tus.Status](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Upload",
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Patch",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[int64](),
 			readerType,
-			reflect.TypeOf(tus.UploadOptions{}),
+			reflect.TypeFor[int64](),
+			reflect.TypeFor[tus.PatchOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*tus.Upload)(nil)),
+			reflect.TypeFor[*tus.Status](),
 			errorType,
 		},
 	)
-	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Resume",
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Terminate",
 		[]reflect.Type{
 			ctxType,
-			reflect.TypeOf(""),
+			reflect.TypeFor[string](),
+			reflect.TypeFor[tus.TerminateOptions](),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Upload",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
+			readerType,
+			reflect.TypeFor[tus.UploadOptions](),
+		},
+		[]reflect.Type{
+			reflect.TypeFor[*tus.Upload](),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeFor[*tus.Client](), "Resume",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeFor[string](),
 			readSeekerType,
-			reflect.TypeOf(tus.ResumeOptions{}),
+			reflect.TypeFor[tus.ResumeOptions](),
 		},
 		[]reflect.Type{
-			reflect.TypeOf((*tus.Status)(nil)),
+			reflect.TypeFor[*tus.Status](),
 			errorType,
 		},
 	)
 
-	requireFields(t, reflect.TypeOf(volume.PutOptions{}),
+	requireFields(t, reflect.TypeFor[volume.PutOptions](),
 		"Fsync",
 		"Replicate",
 		"ModifiedAtSecond",
@@ -263,7 +263,7 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 		"SeaweedHeaders",
 		"Authorization",
 	)
-	requireFields(t, reflect.TypeOf(volume.GetOptions{}),
+	requireFields(t, reflect.TypeFor[volume.GetOptions](),
 		"ReadDeleted",
 		"Width",
 		"Height",
@@ -278,30 +278,30 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 		"AcceptEncoding",
 		"Authorization",
 	)
-	requireFields(t, reflect.TypeOf(volume.DeleteOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(blob.Config{}), "EnableVolumeAuthorization")
-	requireFields(t, reflect.TypeOf(filer.WriteOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.AppendOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.MultipartUploadOptions{}), "Filename", "Authorization")
-	requireFields(t, reflect.TypeOf(filer.GetOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.HeadOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.StatOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.ListOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.WalkOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.DeleteOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.CopyOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.MoveOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.TagOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(filer.MkdirOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.OptionsOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.CreateOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.HeadOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.PatchOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.TerminateOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.UploadOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(tus.ResumeOptions{}), "Authorization")
-	requireFields(t, reflect.TypeOf(master.VacuumOptions{}), "GarbageThreshold")
-	requireFields(t, reflect.TypeOf(master.DeleteCollectionOptions{}), "Collection")
+	requireFields(t, reflect.TypeFor[volume.DeleteOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[blob.Config](), "EnableVolumeAuthorization")
+	requireFields(t, reflect.TypeFor[filer.WriteOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.AppendOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.MultipartUploadOptions](), "Filename", "Authorization")
+	requireFields(t, reflect.TypeFor[filer.GetOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.HeadOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.StatOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.ListOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.WalkOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.DeleteOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.CopyOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.MoveOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.TagOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.MkdirOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.OptionsOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.CreateOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.HeadOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.PatchOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.TerminateOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.UploadOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.ResumeOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[master.VacuumOptions](), "GarbageThreshold")
+	requireFields(t, reflect.TypeFor[master.DeleteCollectionOptions](), "Collection")
 }
 
 func requireMethod(t *testing.T, receiver reflect.Type, name string, wantIn []reflect.Type, wantOut []reflect.Type) {
@@ -321,8 +321,8 @@ func requireMethod(t *testing.T, receiver reflect.Type, name string, wantIn []re
 	}
 
 	gotOut := make([]reflect.Type, 0, method.Type.NumOut())
-	for i := 0; i < method.Type.NumOut(); i++ {
-		gotOut = append(gotOut, method.Type.Out(i))
+	for out := range method.Type.Outs() {
+		gotOut = append(gotOut, out)
 	}
 	if !reflect.DeepEqual(gotOut, wantOut) {
 		t.Fatalf("%s.%s outputs = %v, want %v", receiver, name, gotOut, wantOut)

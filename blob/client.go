@@ -2,6 +2,7 @@ package blob
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -92,7 +93,7 @@ type GetOptions struct {
 // New creates a blob client.
 func New(config Config) (*Client, error) {
 	if config.Master == nil {
-		return nil, fmt.Errorf("blob: master client is required")
+		return nil, errors.New("blob: master client is required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
@@ -129,13 +130,14 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 		return nil, err
 	}
 	if assigned.FID == "" {
-		return nil, fmt.Errorf("blob: master assign returned empty fid")
+		return nil, errors.New("blob: master assign returned empty fid")
 	}
 
 	baseURL, err := c.assignedVolumeURL(assigned)
 	if err != nil {
 		return nil, err
 	}
+	//nolint:contextcheck // Volume clients own background health checks and are closed by blob client lifecycle.
 	volumeClient, err := c.volumeClient([]string{baseURL})
 	if err != nil {
 		return nil, err
@@ -153,6 +155,7 @@ func (c *Client) Put(ctx context.Context, body io.Reader, opts PutOptions) (*Put
 	if err != nil {
 		return nil, err
 	}
+	//nolint:contextcheck // Cached volume clients outlive this request context until evicted or closed.
 	if _, err := c.remember(volumeID(assigned.FID), []string{baseURL}); err != nil {
 		return nil, err
 	}
@@ -269,6 +272,7 @@ func (c *Client) authorizedVolumeClientFor(ctx context.Context, fileID string, r
 	if err != nil {
 		return nil, "", err
 	}
+	//nolint:contextcheck // Authorized volume clients own background health checks and are closed by caller.
 	volumeClient, err := c.volumeClient(baseURLs)
 	if err != nil {
 		return nil, "", err
@@ -321,6 +325,7 @@ func (c *Client) lookupVolumeClient(ctx context.Context, volumeID string) (*volu
 	if err != nil {
 		return nil, err
 	}
+	//nolint:contextcheck // Cached volume clients outlive this request context until evicted or closed.
 	return c.remember(volumeID, baseURLs)
 }
 
@@ -355,7 +360,7 @@ func (c *Client) lookupVolumeURLs(locations []master.Location) ([]string, error)
 		baseURLs = append(baseURLs, baseURL)
 	}
 	if len(baseURLs) == 0 {
-		return nil, fmt.Errorf("blob: no locations for volume")
+		return nil, errors.New("blob: no locations for volume")
 	}
 	return baseURLs, nil
 }
@@ -498,7 +503,7 @@ func cloneStrings(values []string) []string {
 
 func normalizeVolumeURL(raw string) (string, error) {
 	if raw == "" {
-		return "", fmt.Errorf("blob: volume url is empty")
+		return "", errors.New("blob: volume url is empty")
 	}
 	if !strings.Contains(raw, "://") {
 		raw = "http://" + raw

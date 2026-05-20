@@ -2,6 +2,7 @@ package master
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -39,7 +40,7 @@ type Client struct {
 // New creates a master client.
 func New(config Config) (*Client, error) {
 	if len(config.BaseURLs) == 0 {
-		return nil, fmt.Errorf("master: base urls are required")
+		return nil, errors.New("master: base urls are required")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
@@ -272,12 +273,12 @@ func (c *Client) Assign(ctx context.Context, opts AssignOptions) (*AssignRespons
 	httpx.AddString(query, "disk", opts.Disk)
 
 	var out AssignResponse
-	resp, err := c.http.DecodeJSONEndpointWithResponse(ctx, c.endpoints, "/dir/assign", httpx.Request{
+	header, err := c.http.DecodeJSONEndpointWithHeader(ctx, c.endpoints, "/dir/assign", httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,
 	}, &out)
-	if resp != nil {
-		out.Authorization = resp.Header.Get("Authorization")
+	if header != nil {
+		out.Authorization = header.Get("Authorization")
 	}
 	return &out, err
 }
@@ -293,12 +294,12 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 	}
 
 	var out LookupResponse
-	resp, err := c.http.DecodeJSONEndpointWithResponse(ctx, c.endpoints, "/dir/lookup", httpx.Request{
+	header, err := c.http.DecodeJSONEndpointWithHeader(ctx, c.endpoints, "/dir/lookup", httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,
 	}, &out)
-	if resp != nil {
-		out.Authorization = resp.Header.Get("Authorization")
+	if header != nil {
+		out.Authorization = header.Get("Authorization")
 	}
 	return &out, err
 }
@@ -306,10 +307,10 @@ func (c *Client) Lookup(ctx context.Context, volumeID string, opts LookupOptions
 // Submit uploads a file through the master's /submit convenience endpoint.
 func (c *Client) Submit(ctx context.Context, filename string, body io.Reader, opts SubmitOptions) (*SubmitResponse, error) {
 	if strings.TrimSpace(filename) == "" {
-		return nil, fmt.Errorf("master: filename is required")
+		return nil, errors.New("master: filename is required")
 	}
 	if body == nil {
-		return nil, fmt.Errorf("master: body is required")
+		return nil, errors.New("master: body is required")
 	}
 
 	reader, writer := io.Pipe()
@@ -341,7 +342,7 @@ func (c *Client) Vacuum(ctx context.Context, opts VacuumOptions) error {
 // Grow asks the master to grow volumes.
 func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, error) {
 	if opts.Count <= 0 {
-		return nil, fmt.Errorf("master: grow count is required")
+		return nil, errors.New("master: grow count is required")
 	}
 	query := url.Values{}
 	httpx.AddInt(query, "count", opts.Count)
@@ -366,7 +367,7 @@ func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, er
 // DeleteCollection deletes a collection through the master.
 func (c *Client) DeleteCollection(ctx context.Context, opts DeleteCollectionOptions) error {
 	if strings.TrimSpace(opts.Collection) == "" {
-		return fmt.Errorf("master: collection is required")
+		return errors.New("master: collection is required")
 	}
 	query := url.Values{}
 	query.Set("collection", opts.Collection)

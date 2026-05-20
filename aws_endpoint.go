@@ -2,7 +2,7 @@ package seaweed
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,7 +47,7 @@ func (r iamEndpointResolver) ResolveEndpoint(ctx context.Context, params iam.End
 
 func resolveAWSEndpoint(endpoints *httpx.EndpointSet) (smithyendpoints.Endpoint, error) {
 	if endpoints == nil {
-		return smithyendpoints.Endpoint{}, fmt.Errorf("seaweed: endpoints are required")
+		return smithyendpoints.Endpoint{}, errors.New("seaweed: endpoints are required")
 	}
 	lease, err := endpoints.Lease("")
 	if err != nil {

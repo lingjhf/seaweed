@@ -132,6 +132,8 @@ func TestClientSubmitBuildsRequest(t *testing.T) {
 		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
 			t.Fatalf("Content-Type = %q, want multipart/form-data", r.Header.Get("Content-Type"))
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+		//nolint:gosec // Test handler caps the request body with http.MaxBytesReader above.
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Fatalf("ParseMultipartForm() error = %v", err)
 		}
@@ -139,7 +141,9 @@ func TestClientSubmitBuildsRequest(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FormFile() error = %v", err)
 		}
-		defer file.Close()
+		defer func() {
+			_ = file.Close()
+		}()
 		if header.Filename != "report.txt" {
 			t.Fatalf("multipart filename = %q, want report.txt", header.Filename)
 		}

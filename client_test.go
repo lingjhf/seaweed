@@ -101,7 +101,10 @@ func TestNewHTTPClientUsesOverrides(t *testing.T) {
 		ResponseHeaderTimeout: 16 * time.Second,
 		Timeout:               17 * time.Second,
 	})
-	transport := client.Transport.(*http.Transport)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", client.Transport)
+	}
 	if transport.MaxIdleConns != 10 || transport.MaxIdleConnsPerHost != 8 {
 		t.Fatalf("idle conn settings = %d/%d, want 10/8", transport.MaxIdleConns, transport.MaxIdleConnsPerHost)
 	}

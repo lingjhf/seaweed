@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -144,7 +145,7 @@ func NormalizeEndpointPolicy(policy EndpointPolicy) (EndpointPolicy, error) {
 // NormalizeBaseURLs validates, normalizes, and deduplicates base URLs.
 func NormalizeBaseURLs(rawURLs []string) ([]string, error) {
 	if len(rawURLs) == 0 {
-		return nil, fmt.Errorf("httpx: base urls are required")
+		return nil, errors.New("httpx: base urls are required")
 	}
 	urls := make([]string, 0, len(rawURLs))
 	seen := map[string]struct{}{}
@@ -160,7 +161,7 @@ func NormalizeBaseURLs(rawURLs []string) ([]string, error) {
 		urls = append(urls, normalized)
 	}
 	if len(urls) == 0 {
-		return nil, fmt.Errorf("httpx: base urls are required")
+		return nil, errors.New("httpx: base urls are required")
 	}
 	return urls, nil
 }
@@ -172,7 +173,7 @@ func NormalizeBaseURL(raw string) (string, error) {
 		return "", err
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("expected absolute http url")
+		return "", errors.New("expected absolute http url")
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/")
 	parsed.RawQuery = ""
@@ -243,7 +244,7 @@ func (s *EndpointSet) Lease(path string) (*EndpointLease, error) {
 			halfOpen: halfOpen,
 		}, nil
 	}
-	return nil, fmt.Errorf("httpx: no available endpoints")
+	return nil, errors.New("httpx: no available endpoints")
 }
 
 // Finish records whether the leased endpoint attempt succeeded.
@@ -432,7 +433,7 @@ func (s *EndpointSet) probeAll(client *http.Client, method string, path string) 
 			s.RecordFailure(index)
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		cancel()
 		if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusInternalServerError {
 			s.RecordSuccess(index)

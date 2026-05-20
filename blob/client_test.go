@@ -357,7 +357,7 @@ func TestGetHeadDeleteLookupCacheAndInvalidate(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
@@ -380,7 +380,11 @@ func TestGetHeadDeleteLookupCacheAndInvalidate(t *testing.T) {
 	}
 
 	statusCode.Store(http.StatusNotFound)
-	if _, err := client.Get(context.Background(), "9,abc", blob.GetOptions{Range: "bytes=0-4"}); err == nil {
+	resp, err = client.Get(context.Background(), "9,abc", blob.GetOptions{Range: "bytes=0-4"})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("Get() after 404 error = nil, want error")
 	}
 	statusCode.Store(http.StatusOK)
@@ -464,7 +468,7 @@ func TestGetHeadDeleteUseLookupAuthorizationWhenEnabled(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
@@ -529,7 +533,7 @@ func TestGetFailsOverAcrossLookupLocations(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
@@ -569,7 +573,7 @@ func TestLookupUsesPublicURLAndDeduplicatesLocations(t *testing.T) {
 	defer masterServer.Close()
 
 	client := newTestClient(t, masterServer, true)
-	assertGetBody(t, client, "9,abc", "public")
+	assertGetBody(t, client, "public")
 	if calls.Load() != 1 {
 		t.Fatalf("volume calls = %d, want one deduplicated endpoint", calls.Load())
 	}
@@ -606,9 +610,9 @@ func TestBlobLocationCacheTTLRefreshesLookup(t *testing.T) {
 	client := newTestClientWithConfig(t, masterServer, blob.Config{
 		LocationCacheTTL: 5 * time.Millisecond,
 	})
-	assertGetBody(t, client, "9,abc", "first")
+	assertGetBody(t, client, "first")
 	time.Sleep(20 * time.Millisecond)
-	assertGetBody(t, client, "9,abc", "second")
+	assertGetBody(t, client, "second")
 	if lookups.Load() != 2 {
 		t.Fatalf("lookups = %d, want 2", lookups.Load())
 	}
@@ -647,8 +651,8 @@ func TestBlobEndpointPolicyRoundRobinUsesCachedVolumeClient(t *testing.T) {
 			Mode: "round-robin",
 		},
 	})
-	assertGetBody(t, client, "9,abc", "first")
-	assertGetBody(t, client, "9,abc", "second")
+	assertGetBody(t, client, "first")
+	assertGetBody(t, client, "second")
 	if lookups.Load() != 1 {
 		t.Fatalf("lookups = %d, want cached 1", lookups.Load())
 	}
@@ -676,9 +680,9 @@ func TestCloseClearsLocationCache(t *testing.T) {
 	defer masterServer.Close()
 
 	client := newTestClient(t, masterServer, false)
-	assertGetBody(t, client, "9,abc", "body")
+	assertGetBody(t, client, "body")
 	client.Close()
-	assertGetBody(t, client, "9,abc", "body")
+	assertGetBody(t, client, "body")
 	if lookups.Load() != 2 {
 		t.Fatalf("lookups = %d, want cache cleared by Close", lookups.Load())
 	}
@@ -718,7 +722,7 @@ func TestConcurrentGetCoalescesLookup(t *testing.T) {
 				return
 			}
 			_, err = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			errs <- err
 		}()
 	}
@@ -770,14 +774,18 @@ func TestLookupWaitRespectsContextCancellation(t *testing.T) {
 			leaderErr <- err
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		leaderErr <- nil
 	}()
 
 	<-lookupStarted
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := client.Get(ctx, "9,abc", blob.GetOptions{}); err != context.Canceled {
+	resp, err := client.Get(ctx, "9,abc", blob.GetOptions{})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Get() error = %v, want context.Canceled", err)
 	}
 	close(releaseLookup)
@@ -851,7 +859,11 @@ func TestLookupErrors(t *testing.T) {
 			defer masterServer.Close()
 
 			client := newTestClient(t, masterServer, false)
-			if _, err := client.Get(context.Background(), "9,abc", blob.GetOptions{}); err == nil {
+			resp, err := client.Get(context.Background(), "9,abc", blob.GetOptions{})
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			if err == nil {
 				t.Fatal("Get() error = nil, want error")
 			}
 		})
@@ -865,7 +877,11 @@ func TestInvalidFileID(t *testing.T) {
 	defer masterServer.Close()
 
 	client := newTestClient(t, masterServer, false)
-	if _, err := client.Get(context.Background(), "", blob.GetOptions{}); err == nil {
+	resp, err := client.Get(context.Background(), "", blob.GetOptions{})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("Get() error = nil, want invalid file id error")
 	}
 	if _, err := client.Head(context.Background(), ""); err == nil {
@@ -876,14 +892,14 @@ func TestInvalidFileID(t *testing.T) {
 	}
 }
 
-func assertGetBody(t *testing.T, client *blob.Client, fileID string, want string) {
+func assertGetBody(t *testing.T, client *blob.Client, want string) {
 	t.Helper()
-	resp, err := client.Get(context.Background(), fileID, blob.GetOptions{})
+	resp, err := client.Get(context.Background(), "9,abc", blob.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}

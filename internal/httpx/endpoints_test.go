@@ -384,7 +384,7 @@ func TestEndpointSetCircuitBreakerLimitsHalfOpenRequests(t *testing.T) {
 			Method: http.MethodGet,
 		})
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		firstErr <- err
 	}()
@@ -399,7 +399,7 @@ func TestEndpointSetCircuitBreakerLimitsHalfOpenRequests(t *testing.T) {
 		Method: http.MethodGet,
 	})
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if err == nil || !strings.Contains(err.Error(), "no available endpoints") {
 		t.Fatalf("second DoEndpoint() error = %v, want no available endpoints", err)

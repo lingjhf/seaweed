@@ -1,0 +1,83 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - dogsled
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forcetypeassert
+    - gochecksumtype
+    - gocheckcompilerdirectives
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - inamedparam
+    - intrange
+    - iotamixing
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - modernize
+    - musttag
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - nolintlint
+    - nakedret
+    - noctx
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - predeclared
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sloglint
+    - sqlclosecheck
+    - staticcheck
+    - tagalign
+    - testifylint
+    - thelper
+    - unconvert
+    - unparam
+    - unqueryvet
+    - usetesting
+    - usestdlibvars
+    - unused
+    - wastedassign
+    - whitespace
+
+  exclusions:
+    rules:
+      # SeaweedFS returns protocol fields such as "IsLeader", "DiskStatuses",
+      # and "percent_free"; SDK structs must preserve those official tags.
+      - linters:
+          - tagliatelle
+        path: ".*"
+      # The integration test harness intentionally launches the local weed
+      # binary and reads/writes files under t.TempDir().
+      - linters:
+          - gosec
+        path: "^internal/testweed/"
+        text: "G204|G304|G703"
