@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -45,10 +46,15 @@ type Client struct {
 
 // Options describes TUS server capabilities.
 type Options struct {
-	Version    string
-	Versions   string
-	Extensions string
-	MaxSize    int64
+	Version                    string
+	Versions                   string
+	VersionList                []string
+	Extensions                 string
+	ExtensionList              []string
+	MaxSize                    int64
+	SupportsCreation           bool
+	SupportsCreationWithUpload bool
+	SupportsTermination        bool
 }
 
 // OptionsOptions configures TUS capability discovery.
@@ -166,11 +172,18 @@ func (c *Client) Options(ctx context.Context, opts OptionsOptions) (*Options, er
 	if err != nil {
 		return nil, err
 	}
+	versions := splitHeaderList(resp.Header.Get("Tus-Version"))
+	extensions := splitHeaderList(resp.Header.Get("Tus-Extension"))
 	return &Options{
-		Version:    resp.Header.Get("Tus-Resumable"),
-		Versions:   resp.Header.Get("Tus-Version"),
-		Extensions: resp.Header.Get("Tus-Extension"),
-		MaxSize:    maxSize,
+		Version:                    resp.Header.Get("Tus-Resumable"),
+		Versions:                   resp.Header.Get("Tus-Version"),
+		VersionList:                versions,
+		Extensions:                 resp.Header.Get("Tus-Extension"),
+		ExtensionList:              extensions,
+		MaxSize:                    maxSize,
+		SupportsCreation:           slices.Contains(extensions, "creation"),
+		SupportsCreationWithUpload: slices.Contains(extensions, "creation-with-upload"),
+		SupportsTermination:        slices.Contains(extensions, "termination"),
 	}, nil
 }
 
@@ -500,6 +513,21 @@ func parseOptionalIntHeader(value string) (int64, error) {
 		return 0, fmt.Errorf("tus: invalid integer header %q: %w", value, err)
 	}
 	return out, nil
+}
+
+func splitHeaderList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func escapePath(path string) string {

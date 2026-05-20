@@ -67,7 +67,7 @@ func TestOptionsReturnsServerCapabilities(t *testing.T) {
 		}
 		w.Header().Set("Tus-Resumable", tus.Version)
 		w.Header().Set("Tus-Version", "1.0.0")
-		w.Header().Set("Tus-Extension", "creation,termination")
+		w.Header().Set("Tus-Extension", "creation, creation-with-upload,termination")
 		w.Header().Set("Tus-Max-Size", "1048576")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -78,8 +78,17 @@ func TestOptionsReturnsServerCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Options() error = %v", err)
 	}
-	if options.Version != tus.Version || options.Versions != "1.0.0" || options.Extensions != "creation,termination" || options.MaxSize != 1048576 {
+	if options.Version != tus.Version || options.Versions != "1.0.0" || options.Extensions != "creation, creation-with-upload,termination" || options.MaxSize != 1048576 {
 		t.Fatalf("Options() = %+v, want server capabilities", options)
+	}
+	if got := strings.Join(options.VersionList, ","); got != "1.0.0" {
+		t.Fatalf("VersionList = %q, want 1.0.0", got)
+	}
+	if got := strings.Join(options.ExtensionList, ","); got != "creation,creation-with-upload,termination" {
+		t.Fatalf("ExtensionList = %q, want structured extensions", got)
+	}
+	if !options.SupportsCreation || !options.SupportsCreationWithUpload || !options.SupportsTermination {
+		t.Fatalf("support flags = %+v, want SeaweedFS TUS capabilities", options)
 	}
 }
 
