@@ -329,6 +329,7 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 							"DiffRackCount":       2,
 							"DiffDataCenterCount": 3,
 						},
+						"RepType": "123",
 						"Ttl": map[string]any{
 							"Count": 7,
 							"Unit":  1,
@@ -393,6 +394,9 @@ func TestHeadDeleteStatusAndHealth(t *testing.T) {
 	}
 	if vol.ReplicaPlacement.SameRackCount != 1 || vol.ReplicaPlacement.DiffRackCount != 2 || vol.ReplicaPlacement.DiffDataCenterCount != 3 {
 		t.Fatalf("Status().Volumes[0].ReplicaPlacement = %+v, want decoded placement", vol.ReplicaPlacement)
+	}
+	if vol.RepType != "123" {
+		t.Fatalf("Status().Volumes[0].RepType = %q, want 123", vol.RepType)
 	}
 	if vol.TTL.Count != 7 || vol.TTL.Unit != 1 {
 		t.Fatalf("Status().Volumes[0].TTL = %+v, want decoded ttl", vol.TTL)

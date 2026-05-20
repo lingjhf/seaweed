@@ -107,6 +107,7 @@ type VolumeInfo struct {
 	ID                int                    `json:"Id"`
 	Size              uint64                 `json:"Size"`
 	ReplicaPlacement  VolumeReplicaPlacement `json:"ReplicaPlacement"`
+	RepType           string                 `json:"RepType"`
 	TTL               VolumeTTL              `json:"Ttl"`
 	DiskType          string                 `json:"DiskType"`
 	DiskID            int                    `json:"DiskId"`

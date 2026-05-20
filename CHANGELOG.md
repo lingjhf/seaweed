@@ -47,6 +47,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 
 - Volume health checks now use `/healthz` instead of reading full `/status`.
 - Coverage gate now requires at least `93.5%` combined production coverage from unit and integration profiles.
+- Master and volume status structs now decode the official `RepType` volume field.
 - README examples now cover Blob, Filer, TUS, S3/IAM, endpoint policy, and validation flows.
 
 ### Fixed

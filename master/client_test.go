@@ -470,6 +470,7 @@ func TestClientStatusRequests(t *testing.T) {
 											"DiffRackCount":       1,
 											"DiffDataCenterCount": 0,
 										},
+										"RepType": "210",
 										"Ttl": map[string]any{
 											"Count": 3,
 											"Unit":  1,
@@ -561,6 +562,9 @@ func TestClientStatusRequests(t *testing.T) {
 	}
 	if volume.ReplicaPlacement.SameRackCount != 2 || volume.ReplicaPlacement.DiffRackCount != 1 || volume.ReplicaPlacement.DiffDataCenterCount != 0 {
 		t.Fatalf("VolumeStatus() replica placement = %+v, want decoded replica placement", volume.ReplicaPlacement)
+	}
+	if volume.RepType != "210" {
+		t.Fatalf("VolumeStatus() RepType = %q, want 210", volume.RepType)
 	}
 	if volume.TTL.Count != 3 || volume.TTL.Unit != 1 {
 		t.Fatalf("VolumeStatus() ttl = %+v, want decoded ttl", volume.TTL)
