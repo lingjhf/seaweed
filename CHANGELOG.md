@@ -58,3 +58,4 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Endpoint circuit breaker now enforces configured half-open request limits.
 - TUS relative upload `Location` headers are now resolved against the filer endpoint that created the session.
 - TUS `Create` and `CreateWithUpload` now reject negative upload sizes before sending requests.
+- Added an MIT license file so pkg.go.dev can display module documentation.

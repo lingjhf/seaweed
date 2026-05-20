@@ -2,12 +2,13 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/lingjhf/seaweed.svg)](https://pkg.go.dev/github.com/lingjhf/seaweed)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/lingjhf/seaweed)](https://go.dev/)
+[![License](https://img.shields.io/github/license/lingjhf/seaweed)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/lingjhf/seaweed/test.yml?branch=master)](https://github.com/lingjhf/seaweed/actions)
-[![Release](https://img.shields.io/github/v/tag/lingjhf/seaweed?label=release&sort=semver)](https://github.com/lingjhf/seaweed/tree/0.1.0)
+[![Release](https://img.shields.io/github/v/tag/lingjhf/seaweed?label=release&sort=semver)](https://github.com/lingjhf/seaweed/tree/0.1.1)
 
 Go client SDK for SeaweedFS native HTTP APIs plus SeaweedFS S3/IAM compatibility.
 
-Current production-usable release: [`0.1.0`](https://github.com/lingjhf/seaweed/tree/0.1.0).
+Current production-usable release: [`0.1.1`](https://github.com/lingjhf/seaweed/tree/0.1.1).
 
 This project is in the `0.x` development line. Pin an exact version in production, because public APIs can still change between minor versions while the SDK is being shaped against real SeaweedFS behavior.
 
@@ -18,6 +19,7 @@ This project is in the `0.x` development line. Pin an exact version in productio
 - [Usage Examples](#usage-examples)
 - [Validation](#validation)
 - [Notes](#notes)
+- [License](#license)
 
 ## Features
 
@@ -33,7 +35,7 @@ This project is in the `0.x` development line. Pin an exact version in productio
 Install the SDK:
 
 ```bash
-go get github.com/lingjhf/seaweed@0.1.0
+go get github.com/lingjhf/seaweed@0.1.1
 ```
 
 Create a root client and upload one blob:
@@ -560,3 +562,7 @@ See `CHANGELOG.md` and `RELEASE.md` before cutting a release.
 - S3/IAM uses AWS SDK for Go v2 and path-style S3 addressing.
 - IAM defaults to `S3URLs` because SeaweedFS embeds IAM in the S3 server by default.
 - TUS implements SeaweedFS-supported TUS 1.0.0 operations: creation, creation-with-upload, offset upload, resume, and termination.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
