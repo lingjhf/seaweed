@@ -103,6 +103,65 @@ func TestTUSUploadResumeTerminateIntegration(t *testing.T) {
 	}
 }
 
+func TestTUSMultiFilerUploadLocationAffinityIntegration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cluster := testweed.StartMasterVolumeFiler(t, ctx)
+	secondFilerURL := cluster.StartFiler(t, ctx)
+	client, err := seaweed.New(seaweed.Config{
+		MasterURLs: []string{cluster.MasterURL},
+		FilerURLs:  []string{cluster.FilerURL, secondFilerURL},
+		TUSEndpointPolicy: seaweed.EndpointPolicy{
+			Mode: seaweed.EndpointPolicyRoundRobin,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	firstUpload, err := client.TUS().Create(ctx, "/tus/affinity-first.bin", tus.CreateOptions{Size: 4})
+	if err != nil {
+		t.Fatalf("first Create() error = %v", err)
+	}
+	secondUpload, err := client.TUS().Create(ctx, "/tus/affinity-second.bin", tus.CreateOptions{Size: 4})
+	if err != nil {
+		t.Fatalf("second Create() error = %v", err)
+	}
+	assertLocationPrefix(t, firstUpload.Location, cluster.FilerURL)
+	assertLocationPrefix(t, secondUpload.Location, secondFilerURL)
+
+	firstStatus, err := client.TUS().Patch(ctx, firstUpload.Location, 0, strings.NewReader("ab"), 2, tus.PatchOptions{})
+	if err != nil {
+		t.Fatalf("first Patch() error = %v", err)
+	}
+	if firstStatus.Offset != 2 {
+		t.Fatalf("first Patch offset = %d, want 2", firstStatus.Offset)
+	}
+	secondStatus, err := client.TUS().Patch(ctx, secondUpload.Location, 0, strings.NewReader("cd"), 2, tus.PatchOptions{})
+	if err != nil {
+		t.Fatalf("second Patch() error = %v", err)
+	}
+	if secondStatus.Offset != 2 {
+		t.Fatalf("second Patch offset = %d, want 2", secondStatus.Offset)
+	}
+
+	firstStatus, err = client.TUS().Head(ctx, firstUpload.Location, tus.HeadOptions{})
+	if err != nil {
+		t.Fatalf("first Head() error = %v", err)
+	}
+	if firstStatus.Offset != 2 || firstStatus.Size != 4 {
+		t.Fatalf("first Head() = %+v, want offset 2 size 4", firstStatus)
+	}
+	secondStatus, err = client.TUS().Head(ctx, secondUpload.Location, tus.HeadOptions{})
+	if err != nil {
+		t.Fatalf("second Head() error = %v", err)
+	}
+	if secondStatus.Offset != 2 || secondStatus.Size != 4 {
+		t.Fatalf("second Head() = %+v, want offset 2 size 4", secondStatus)
+	}
+}
+
 func assertFilerContent(t *testing.T, ctx context.Context, client *seaweed.Client, path string, want string) {
 	t.Helper()
 
@@ -117,6 +176,14 @@ func assertFilerContent(t *testing.T, ctx context.Context, client *seaweed.Clien
 	}
 	if string(body) != want {
 		t.Fatalf("content = %q, want %q", body, want)
+	}
+}
+
+func assertLocationPrefix(t *testing.T, location string, wantPrefix string) {
+	t.Helper()
+
+	if !strings.HasPrefix(location, wantPrefix+"/.tus/.uploads/") {
+		t.Fatalf("location = %q, want prefix %q", location, wantPrefix+"/.tus/.uploads/")
 	}
 }
 

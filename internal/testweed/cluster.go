@@ -22,14 +22,15 @@ type Cluster struct {
 	MasterURL string
 	VolumeURL string
 	FilerURL  string
+	FilerURLs []string
 	S3URL     string
 	S3URLs    []string
 
-	masterAddress string
-	filerAddress  string
-	dataDir       string
-	cmds          []*exec.Cmd
-	logs          []string
+	masterAddress  string
+	filerAddresses []string
+	dataDir        string
+	cmds           []*exec.Cmd
+	logs           []string
 }
 
 func StartMasterVolume(t *testing.T, ctx context.Context) *Cluster {
@@ -93,22 +94,37 @@ func StartMasterVolumeFiler(t *testing.T, ctx context.Context) *Cluster {
 	t.Helper()
 
 	cluster := StartMasterVolume(t, ctx)
-	filerPort, filerGRPCPort := freeDistinctPortPair(t, ctx, cluster.usedPorts()...)
-	filerDir := filepath.Join(cluster.dataDir, "filer")
+	cluster.StartFiler(t, ctx)
+	return cluster
+}
+
+func (c *Cluster) StartFiler(t *testing.T, ctx context.Context) string {
+	t.Helper()
+
+	if c.masterAddress == "" {
+		t.Fatal("testweed: master must be started before filer")
+	}
+	filerPort, filerGRPCPort := freeDistinctPortPair(t, ctx, c.usedPorts()...)
+	filerDir := filepath.Join(c.dataDir, fmt.Sprintf("filer-%d", len(c.FilerURLs)+1))
 	mkdir(t, filerDir)
 
-	cluster.FilerURL = fmt.Sprintf("http://127.0.0.1:%d", filerPort)
-	cluster.filerAddress = fmt.Sprintf("127.0.0.1:%d", filerPort)
-	cluster.start(t, ctx, findWeedBinary(t), "filer",
+	filerURL := fmt.Sprintf("http://127.0.0.1:%d", filerPort)
+	filerAddress := fmt.Sprintf("127.0.0.1:%d", filerPort)
+	c.start(t, ctx, findWeedBinary(t), "filer",
 		"-port", strconv.Itoa(filerPort),
 		"-port.grpc", strconv.Itoa(filerGRPCPort),
-		"-master", cluster.masterAddress,
+		"-master", c.masterAddress,
 		"-ip", "127.0.0.1",
 		"-defaultStoreDir", filerDir,
 		"-tusBasePath", "/.tus",
 	)
-	cluster.waitForHTTP(t, ctx, cluster.FilerURL+"/")
-	return cluster
+	c.waitForHTTP(t, ctx, filerURL+"/")
+	if c.FilerURL == "" {
+		c.FilerURL = filerURL
+	}
+	c.FilerURLs = append(c.FilerURLs, filerURL)
+	c.filerAddresses = append(c.filerAddresses, filerAddress)
+	return filerURL
 }
 
 func StartMasterVolumeFilerS3(t *testing.T, ctx context.Context) *Cluster {
@@ -122,7 +138,7 @@ func StartMasterVolumeFilerS3(t *testing.T, ctx context.Context) *Cluster {
 func (c *Cluster) StartS3(t *testing.T, ctx context.Context) string {
 	t.Helper()
 
-	if c.filerAddress == "" {
+	if len(c.filerAddresses) == 0 {
 		t.Fatal("testweed: filer must be started before s3")
 	}
 	s3Port, s3GRPCPort := freeDistinctPortPair(t, ctx, c.usedPorts()...)
@@ -135,7 +151,7 @@ func (c *Cluster) StartS3(t *testing.T, ctx context.Context) string {
 		"-port.grpc", strconv.Itoa(s3GRPCPort),
 		"-port.iceberg", "0",
 		"-ip.bind", "127.0.0.1",
-		"-filer", c.filerAddress,
+		"-filer", c.filerAddresses[0],
 		"-iam.readOnly=false",
 	)
 	c.waitForHTTP(t, ctx, s3URL+"/")
@@ -421,8 +437,9 @@ func (c *Cluster) dumpLogs(t *testing.T) {
 
 func (c *Cluster) usedPorts() []int {
 	ports := []int{}
-	rawURLs := make([]string, 0, 3+len(c.S3URLs))
-	rawURLs = append(rawURLs, c.MasterURL, c.VolumeURL, c.FilerURL)
+	rawURLs := make([]string, 0, 2+len(c.FilerURLs)+len(c.S3URLs))
+	rawURLs = append(rawURLs, c.MasterURL, c.VolumeURL)
+	rawURLs = append(rawURLs, c.FilerURLs...)
 	rawURLs = append(rawURLs, c.S3URLs...)
 	for _, rawURL := range rawURLs {
 		if rawURL == "" {
