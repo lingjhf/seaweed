@@ -740,6 +740,12 @@ func TestValidationAndResponseErrors(t *testing.T) {
 	if _, err := client.Upload(context.Background(), "/file", strings.NewReader(""), tus.UploadOptions{Size: -1}); err == nil {
 		t.Fatal("Upload() error = nil, want size error")
 	}
+	if _, err := client.Create(context.Background(), "/file", tus.CreateOptions{Size: -1}); err == nil {
+		t.Fatal("Create() error = nil, want size error")
+	}
+	if _, err := client.CreateWithUpload(context.Background(), "/file", strings.NewReader(""), tus.CreateOptions{Size: -1}); err == nil {
+		t.Fatal("CreateWithUpload() error = nil, want size error")
+	}
 	if _, err := client.Head(context.Background(), "", tus.HeadOptions{}); err == nil {
 		t.Fatal("Head() error = nil, want location error")
 	}

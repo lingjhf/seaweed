@@ -189,6 +189,9 @@ func (c *Client) Options(ctx context.Context, opts OptionsOptions) (*Options, er
 
 // Create creates an upload resource without sending file bytes.
 func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptions) (*Upload, error) {
+	if opts.Size < 0 {
+		return nil, errors.New("tus: size must be non-negative")
+	}
 	path := c.baseURL(targetPath)
 	header := c.baseHeader()
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
@@ -226,6 +229,9 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 
 // CreateWithUpload creates an upload resource and sends the body in the create request.
 func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body io.Reader, opts CreateOptions) (*Upload, error) {
+	if opts.Size < 0 {
+		return nil, errors.New("tus: size must be non-negative")
+	}
 	path := c.baseURL(targetPath)
 	header := c.baseHeader()
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
