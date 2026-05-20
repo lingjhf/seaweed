@@ -1,7 +1,10 @@
-.PHONY: test test-race vet integration coverage bench ci check check-full release-check
+.PHONY: lint test test-race vet integration coverage bench ci check check-full release-check
 
 WEED_BINARY ?= ./weed
 COVER_MIN ?= 93.0
+
+lint:
+	golangci-lint run ./...
 
 test:
 	go test -count=1 ./...
@@ -21,9 +24,9 @@ coverage:
 bench:
 	go test -run '^$$' -bench=. -benchmem ./...
 
-ci: test test-race vet
+ci: lint test test-race vet
 
-check: test test-race vet integration
+check: ci integration
 
 check-full: check coverage
 

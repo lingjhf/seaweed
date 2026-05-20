@@ -16,7 +16,8 @@ Run the full local release gate with a real SeaweedFS `weed` binary:
 WEED_BINARY=./weed make release-check
 ```
 
-`release-check` runs unit tests, race tests, `go vet`, integration tests, and the combined production coverage gate.
+`make ci` runs `golangci-lint`, unit tests, race tests, and `go vet`.
+`release-check` runs the CI gate, integration tests, and the combined production coverage gate.
 
 ## Documentation Checks
 

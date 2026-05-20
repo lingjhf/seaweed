@@ -41,7 +41,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Filer now supports streaming multipart uploads with `UploadMultipart` for directory and file path targets.
 - TUS creation-with-upload by default, with chunked upload still available through `ChunkSize`.
 - Benchmarks for HTTP, Blob cached lookup, path escaping, and TUS upload paths.
-- CI target aligned with unit, race, and vet checks.
+- CI target aligned with lint, unit, race, and vet checks.
 
 ### Changed
 
