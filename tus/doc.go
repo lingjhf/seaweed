@@ -5,5 +5,7 @@
 // termination. SeaweedFS currently declares the creation,
 // creation-with-upload, and termination extensions; this package does not send
 // checksum, defer-length, expiration, or concatenation extension headers.
+// Upload locations returned by SeaweedFS are preserved as the authoritative
+// session URL for follow-up status, patch, resume, and termination requests.
 // Each request option type can carry a per-request Authorization header.
 package tus

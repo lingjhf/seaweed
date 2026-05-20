@@ -288,6 +288,8 @@ if err != nil {
 
 The SDK intentionally models the TUS subset SeaweedFS currently declares: `creation`, `creation-with-upload`, and `termination`. It does not send checksum, defer-length, expiration, or concatenation extension headers unless SeaweedFS adds and declares those capabilities in the future.
 
+When using multiple filer endpoints, treat the upload `Location` returned by `Create`, `CreateWithUpload`, or `Upload` as the authoritative address for follow-up `HEAD`, `PATCH`, `Resume`, and `Terminate` calls. SeaweedFS stores resumable upload sessions on the filer that created them, so the SDK preserves that returned URL instead of rewriting it to another filer endpoint.
+
 ```go
 ctx := context.Background()
 data := "large upload payload"

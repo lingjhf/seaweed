@@ -51,7 +51,9 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Master and volume status structs now decode the official `RepType` volume field.
 - README examples now cover Blob, Filer, TUS, S3/IAM, endpoint policy, and validation flows.
 - TUS documentation now states that SeaweedFS currently declares only creation, creation-with-upload, and termination.
+- TUS documentation now explains upload `Location` affinity for multi-filer endpoint lists.
 
 ### Fixed
 
 - Endpoint circuit breaker now enforces configured half-open request limits.
+- TUS relative upload `Location` headers are now resolved against the filer endpoint that created the session.
