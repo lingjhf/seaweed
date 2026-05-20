@@ -493,6 +493,118 @@ func TestGetHeadDeleteUseLookupAuthorizationWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestGetHeadDeleteAuthorizationLookupErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		body     map[string]any
+		apiError string
+		read     string
+		call     func(context.Context, *blob.Client) error
+		want     string
+	}{
+		{
+			name:     "get lookup api error",
+			apiError: "lookup denied",
+			read:     "yes",
+			call: func(ctx context.Context, client *blob.Client) error {
+				resp, err := client.Get(ctx, "9,abc", blob.GetOptions{})
+				if resp != nil {
+					_ = resp.Body.Close()
+				}
+				return err
+			},
+			want: "lookup denied",
+		},
+		{
+			name: "head no locations",
+			body: map[string]any{
+				"locations": []map[string]string{},
+			},
+			read: "yes",
+			call: func(ctx context.Context, client *blob.Client) error {
+				_, err := client.Head(ctx, "9,abc")
+				return err
+			},
+			want: "no locations for volume 9",
+		},
+		{
+			name: "delete empty lookup url",
+			body: map[string]any{
+				"locations": []map[string]string{{}},
+			},
+			call: func(ctx context.Context, client *blob.Client) error {
+				return client.Delete(ctx, "9,abc")
+			},
+			want: "volume url is empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/dir/lookup" {
+					t.Fatalf("master path = %q, want /dir/lookup", r.URL.Path)
+				}
+				query := r.URL.Query()
+				assertQuery(t, query.Get("volumeId"), "9")
+				assertQuery(t, query.Get("fileId"), "9,abc")
+				assertQuery(t, query.Get("read"), tt.read)
+				if tt.apiError != "" {
+					_ = json.NewEncoder(w).Encode(map[string]string{
+						"error": tt.apiError,
+					})
+					return
+				}
+				_ = json.NewEncoder(w).Encode(tt.body)
+			}))
+			defer masterServer.Close()
+
+			client := newTestClientWithConfig(t, masterServer, blob.Config{
+				EnableVolumeAuthorization: true,
+			})
+			err := tt.call(context.Background(), client)
+			if err == nil {
+				t.Fatal("authorized blob operation error = nil, want lookup error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("authorized blob operation error = %q, want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
+func TestAuthorizedInvalidFileIDSkipsLookup(t *testing.T) {
+	t.Parallel()
+
+	var lookups atomic.Int32
+	masterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lookups.Add(1)
+		http.Error(w, "lookup should not be called", http.StatusInternalServerError)
+	}))
+	defer masterServer.Close()
+
+	client := newTestClientWithConfig(t, masterServer, blob.Config{
+		EnableVolumeAuthorization: true,
+	})
+	if resp, err := client.Get(context.Background(), "", blob.GetOptions{}); err == nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		t.Fatal("Get() error = nil, want invalid file id error")
+	}
+	if _, err := client.Head(context.Background(), ""); err == nil {
+		t.Fatal("Head() error = nil, want invalid file id error")
+	}
+	if err := client.Delete(context.Background(), ""); err == nil {
+		t.Fatal("Delete() error = nil, want invalid file id error")
+	}
+	if lookups.Load() != 0 {
+		t.Fatalf("lookups = %d, want 0", lookups.Load())
+	}
+}
+
 func TestGetFailsOverAcrossLookupLocations(t *testing.T) {
 	t.Parallel()
 
