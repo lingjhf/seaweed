@@ -284,7 +284,9 @@ if err != nil {
 
 ### TUS Resumable Uploads
 
-`Upload` uses SeaweedFS creation-with-upload by default. Set `ChunkSize` when you want explicit chunked PATCH uploads. This maps to SeaweedFS' documented TUS `OPTIONS`, `POST`, `HEAD`, `PATCH`, and `DELETE` endpoints under `/.tus`.
+`Upload` uses SeaweedFS creation-with-upload by default. Set `ChunkSize` when you want explicit chunked PATCH uploads. This maps to SeaweedFS' TUS `OPTIONS`, `POST`, `HEAD`, `PATCH`, and `DELETE` endpoints under `/.tus`.
+
+The SDK intentionally models the TUS subset SeaweedFS currently declares: `creation`, `creation-with-upload`, and `termination`. It does not send checksum, defer-length, expiration, or concatenation extension headers unless SeaweedFS adds and declares those capabilities in the future.
 
 ```go
 ctx := context.Background()
@@ -294,7 +296,7 @@ options, err := client.TUS().Options(ctx, tus.OptionsOptions{})
 if err != nil {
     return err
 }
-fmt.Println(options.Extensions)
+fmt.Println(options.ExtensionList, options.SupportsCreationWithUpload, options.MaxSize)
 
 upload, err := client.TUS().Upload(ctx, "/sdk/video.mp4", strings.NewReader(data), tus.UploadOptions{
     Size: int64(len(data)),

@@ -40,6 +40,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Filer entries now expose `Uid` and `Gid` metadata as `UID` and `GID`.
 - Filer now supports streaming multipart uploads with `UploadMultipart` for directory and file path targets.
 - TUS creation-with-upload by default, with chunked upload still available through `ChunkSize`.
+- TUS options now expose parsed version and extension lists plus SeaweedFS capability flags.
 - Benchmarks for HTTP, Blob cached lookup, path escaping, and TUS upload paths.
 - CI target aligned with lint, unit, race, and vet checks.
 
@@ -49,6 +50,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Coverage gate now requires at least `93.5%` combined production coverage from unit and integration profiles.
 - Master and volume status structs now decode the official `RepType` volume field.
 - README examples now cover Blob, Filer, TUS, S3/IAM, endpoint policy, and validation flows.
+- TUS documentation now states that SeaweedFS currently declares only creation, creation-with-upload, and termination.
 
 ### Fixed
 
