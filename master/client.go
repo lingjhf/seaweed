@@ -120,6 +120,16 @@ type GrowOptions struct {
 	Disk               string
 }
 
+// VacuumOptions configures a /vol/vacuum request.
+type VacuumOptions struct {
+	GarbageThreshold float64
+}
+
+// DeleteCollectionOptions configures a /col/delete request.
+type DeleteCollectionOptions struct {
+	Collection string
+}
+
 // CountResponse is returned by master endpoints that report a count.
 type CountResponse struct {
 	Count int `json:"count"`
@@ -318,10 +328,10 @@ func (c *Client) Submit(ctx context.Context, filename string, body io.Reader, op
 	return &out, err
 }
 
-// Vacuum triggers master volume vacuuming with the given garbage threshold.
-func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
+// Vacuum triggers master volume vacuuming.
+func (c *Client) Vacuum(ctx context.Context, opts VacuumOptions) error {
 	query := url.Values{}
-	httpx.AddFloat64(query, "garbageThreshold", garbageThreshold)
+	httpx.AddFloat64(query, "garbageThreshold", opts.GarbageThreshold)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/vol/vacuum", httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,
@@ -330,6 +340,9 @@ func (c *Client) Vacuum(ctx context.Context, garbageThreshold float64) error {
 
 // Grow asks the master to grow volumes.
 func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, error) {
+	if opts.Count <= 0 {
+		return nil, fmt.Errorf("master: grow count is required")
+	}
 	query := url.Values{}
 	httpx.AddInt(query, "count", opts.Count)
 	httpx.AddString(query, "collection", opts.Collection)
@@ -351,9 +364,12 @@ func (c *Client) Grow(ctx context.Context, opts GrowOptions) (*CountResponse, er
 }
 
 // DeleteCollection deletes a collection through the master.
-func (c *Client) DeleteCollection(ctx context.Context, collection string) error {
+func (c *Client) DeleteCollection(ctx context.Context, opts DeleteCollectionOptions) error {
+	if strings.TrimSpace(opts.Collection) == "" {
+		return fmt.Errorf("master: collection is required")
+	}
 	query := url.Values{}
-	query.Set("collection", collection)
+	query.Set("collection", opts.Collection)
 	return c.http.CheckStatusEndpoint(ctx, c.endpoints, "/col/delete", httpx.Request{
 		Method: http.MethodGet,
 		Query:  query,

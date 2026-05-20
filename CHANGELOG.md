@@ -15,6 +15,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Filer `Head`, `Tags`, `Copy`, `Move`, `SetTags`, `DeleteTags`, and `Mkdir` now accept option structs so all filer operations can carry per-request authorization.
 - Filer `UploadMultipart` now accepts a target path and uses `MultipartUploadOptions.Filename` only for directory targets.
 - TUS `Options`, `Head`, `Patch`, and `Terminate` now accept option structs so all TUS operations can carry per-request authorization.
+- Master `Vacuum` and `DeleteCollection` now accept option structs, and master volume management validates required inputs before sending requests.
 
 ### Added
 

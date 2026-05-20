@@ -24,8 +24,15 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 		query := r.URL.Query()
 		assertQuery(t, query.Get("count"), "2")
 		assertQuery(t, query.Get("collection"), "photos")
+		assertQuery(t, query.Get("dataCenter"), "dc1")
+		assertQuery(t, query.Get("rack"), "rack1")
+		assertQuery(t, query.Get("dataNode"), "node1")
 		assertQuery(t, query.Get("replication"), "001")
 		assertQuery(t, query.Get("ttl"), "3d")
+		assertQuery(t, query.Get("preallocate"), "4096")
+		assertQuery(t, query.Get("memoryMapMaxSizeMb"), "128")
+		assertQuery(t, query.Get("writableVolumeCount"), "3")
+		assertQuery(t, query.Get("disk"), "ssd")
 		w.Header().Set("Authorization", "Bearer assign-token")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"count":     2,
@@ -39,10 +46,17 @@ func TestClientAssignBuildsRequest(t *testing.T) {
 	client := newTestClient(t, server)
 
 	resp, err := client.Assign(context.Background(), master.AssignOptions{
-		Count:       2,
-		Collection:  "photos",
-		Replication: "001",
-		TTL:         "3d",
+		Count:               2,
+		Collection:          "photos",
+		DataCenter:          "dc1",
+		Rack:                "rack1",
+		DataNode:            "node1",
+		Replication:         "001",
+		TTL:                 "3d",
+		Preallocate:         4096,
+		MemoryMapMaxSizeMB:  128,
+		WritableVolumeCount: 3,
+		Disk:                "ssd",
 	})
 	if err != nil {
 		t.Fatalf("Assign() error = %v", err)
@@ -73,6 +87,8 @@ func TestClientLookupBuildsRequest(t *testing.T) {
 		query := r.URL.Query()
 		assertQuery(t, query.Get("volumeId"), "3")
 		assertQuery(t, query.Get("collection"), "photos")
+		assertQuery(t, query.Get("fileId"), "3,abc")
+		assertQuery(t, query.Get("read"), "yes")
 		w.Header().Set("Authorization", "Bearer lookup-token")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"locations": []map[string]string{
@@ -89,6 +105,8 @@ func TestClientLookupBuildsRequest(t *testing.T) {
 
 	resp, err := client.Lookup(context.Background(), "3", master.LookupOptions{
 		Collection: "photos",
+		FileID:     "3,abc",
+		Read:       true,
 	})
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
@@ -251,7 +269,7 @@ func TestClientVolumeManagementRequests(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	if err := client.Vacuum(context.Background(), 0.35); err != nil {
+	if err := client.Vacuum(context.Background(), master.VacuumOptions{GarbageThreshold: 0.35}); err != nil {
 		t.Fatalf("Vacuum() error = %v", err)
 	}
 	grow, err := client.Grow(context.Background(), master.GrowOptions{
@@ -272,8 +290,26 @@ func TestClientVolumeManagementRequests(t *testing.T) {
 	if grow.Count != 2 {
 		t.Fatalf("Grow().Count = %d, want 2", grow.Count)
 	}
-	if err := client.DeleteCollection(context.Background(), "photos"); err != nil {
+	if err := client.DeleteCollection(context.Background(), master.DeleteCollectionOptions{Collection: "photos"}); err != nil {
 		t.Fatalf("DeleteCollection() error = %v", err)
+	}
+}
+
+func TestClientVolumeManagementValidation(t *testing.T) {
+	t.Parallel()
+
+	client, err := master.New(master.Config{
+		BaseURLs:   []string{"http://example.test"},
+		HTTPClient: http.DefaultClient,
+	})
+	if err != nil {
+		t.Fatalf("master.New() error = %v", err)
+	}
+	if _, err := client.Grow(context.Background(), master.GrowOptions{}); err == nil {
+		t.Fatal("Grow() error = nil, want count error")
+	}
+	if err := client.DeleteCollection(context.Background(), master.DeleteCollectionOptions{}); err == nil {
+		t.Fatal("DeleteCollection() error = nil, want collection error")
 	}
 }
 
@@ -308,7 +344,7 @@ func TestClientStatusRequestsReturnAPIErrors(t *testing.T) {
 			name: "vacuum",
 			path: "/vol/vacuum",
 			call: func(client *master.Client) error {
-				return client.Vacuum(context.Background(), 0.35)
+				return client.Vacuum(context.Background(), master.VacuumOptions{GarbageThreshold: 0.35})
 			},
 			message: "vacuum failed",
 		},
@@ -316,7 +352,7 @@ func TestClientStatusRequestsReturnAPIErrors(t *testing.T) {
 			name: "delete collection",
 			path: "/col/delete",
 			call: func(client *master.Client) error {
-				return client.DeleteCollection(context.Background(), "photos")
+				return client.DeleteCollection(context.Background(), master.DeleteCollectionOptions{Collection: "photos"})
 			},
 			message: "delete collection failed",
 		},

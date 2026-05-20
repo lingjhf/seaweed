@@ -32,6 +32,24 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 			errorType,
 		},
 	)
+	requireMethod(t, reflect.TypeOf((*master.Client)(nil)), "Vacuum",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(master.VacuumOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*master.Client)(nil)), "DeleteCollection",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(master.DeleteCollectionOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
 
 	requireMethod(t, reflect.TypeOf((*volume.Client)(nil)), "Head",
 		[]reflect.Type{
@@ -282,6 +300,8 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 	requireFields(t, reflect.TypeOf(tus.TerminateOptions{}), "Authorization")
 	requireFields(t, reflect.TypeOf(tus.UploadOptions{}), "Authorization")
 	requireFields(t, reflect.TypeOf(tus.ResumeOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(master.VacuumOptions{}), "GarbageThreshold")
+	requireFields(t, reflect.TypeOf(master.DeleteCollectionOptions{}), "Collection")
 }
 
 func requireMethod(t *testing.T, receiver reflect.Type, name string, wantIn []reflect.Type, wantOut []reflect.Type) {
