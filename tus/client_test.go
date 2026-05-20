@@ -92,6 +92,34 @@ func TestOptionsReturnsServerCapabilities(t *testing.T) {
 	}
 }
 
+func TestOptionsDoesNotInferUnsupportedExtensions(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Tus-Resumable", tus.Version)
+		w.Header().Set("Tus-Version", "1.0.0")
+		w.Header().Set("Tus-Extension", "creation")
+		w.Header().Set("Tus-Max-Size", "1048576")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	options, err := client.Options(context.Background(), tus.OptionsOptions{})
+	if err != nil {
+		t.Fatalf("Options() error = %v", err)
+	}
+	if !options.SupportsCreation {
+		t.Fatalf("SupportsCreation = false, want true")
+	}
+	if options.SupportsCreationWithUpload || options.SupportsTermination {
+		t.Fatalf("support flags = %+v, want only creation", options)
+	}
+	if got := strings.Join(options.ExtensionList, ","); got != "creation" {
+		t.Fatalf("ExtensionList = %q, want creation", got)
+	}
+}
+
 func TestCreateWithUploadSendsBodyAndHeaders(t *testing.T) {
 	t.Parallel()
 

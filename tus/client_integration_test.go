@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,17 @@ func TestTUSUploadResumeTerminateIntegration(t *testing.T) {
 	}
 	if options.Version != tus.Version {
 		t.Fatalf("Version = %q, want %s", options.Version, tus.Version)
+	}
+	if got := strings.Join(options.ExtensionList, ","); got != "creation,creation-with-upload,termination" {
+		t.Fatalf("ExtensionList = %q, want SeaweedFS TUS extensions", got)
+	}
+	if !options.SupportsCreation || !options.SupportsCreationWithUpload || !options.SupportsTermination {
+		t.Fatalf("support flags = %+v, want SeaweedFS TUS capabilities", options)
+	}
+	for _, unsupported := range []string{"checksum", "creation-defer-length", "expiration", "concatenation"} {
+		if slices.Contains(options.ExtensionList, unsupported) {
+			t.Fatalf("ExtensionList includes unsupported extension %q: %v", unsupported, options.ExtensionList)
+		}
 	}
 
 	uploaded, err := client.TUS().Upload(ctx, "/tus/basic.txt", strings.NewReader("basic-data"), tus.UploadOptions{
