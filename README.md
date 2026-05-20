@@ -508,7 +508,7 @@ WEED_BINARY=./weed make release-check
 
 Integration tests require a real SeaweedFS `weed` binary. The test harness resolves `WEED_BINARY` first and then project-root `./weed`.
 `make ci` runs `golangci-lint`, unit tests, race tests, and `go vet`.
-Coverage gates require at least `93.0%` combined production coverage from unit and integration profiles, excluding `examples/*` and `internal/testweed`.
+Coverage gates require at least `93.5%` combined production coverage from unit and integration profiles, excluding `examples/*` and `internal/testweed`.
 See `CHANGELOG.md` and `RELEASE.md` before cutting a release.
 
 ## Notes

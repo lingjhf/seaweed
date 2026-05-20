@@ -789,6 +789,73 @@ func TestDecodeJSONEndpoint(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONEndpointWithResponseReturnsHeader(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Authorization", "Bearer volume-token")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	var out struct {
+		OK bool `json:"ok"`
+	}
+	resp, err := client.DecodeJSONEndpointWithResponse(context.Background(), endpoints, "/assign", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}, &out)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("DecodeJSONEndpointWithResponse() error = %v", err)
+	}
+	if resp.Header.Get("Authorization") != "Bearer volume-token" {
+		t.Fatalf("Authorization = %q, want bearer token", resp.Header.Get("Authorization"))
+	}
+	if !out.OK {
+		t.Fatal("DecodeJSONEndpointWithResponse() decoded OK = false, want true")
+	}
+}
+
+func TestDecodeJSONEndpointWithResponseReturnsHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	endpoints, err := httpx.NewEndpointSet([]string{server.URL})
+	if err != nil {
+		t.Fatalf("NewEndpointSet() error = %v", err)
+	}
+	client := httpx.NewClient(httpx.Config{HTTPClient: server.Client()})
+
+	resp, err := client.DecodeJSONEndpointWithResponse(context.Background(), endpoints, "/assign", httpx.Request{
+		Method:        http.MethodGet,
+		ContentLength: -1,
+	}, &map[string]any{})
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("DecodeJSONEndpointWithResponse() error = nil, want status error")
+	}
+	var httpErr *httpx.Error
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T, want *httpx.Error", err)
+	}
+	if httpErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", httpErr.StatusCode)
+	}
+}
+
 func TestDecodeJSONEndpointReturnsAPIError(t *testing.T) {
 	t.Parallel()
 

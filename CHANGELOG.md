@@ -46,7 +46,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 ### Changed
 
 - Volume health checks now use `/healthz` instead of reading full `/status`.
-- Coverage gate now requires at least `93.0%` combined production coverage from unit and integration profiles.
+- Coverage gate now requires at least `93.5%` combined production coverage from unit and integration profiles.
 - README examples now cover Blob, Filer, TUS, S3/IAM, endpoint policy, and validation flows.
 
 ### Fixed
