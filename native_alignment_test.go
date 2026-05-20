@@ -280,28 +280,212 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 	)
 	requireFields(t, reflect.TypeFor[volume.DeleteOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[blob.Config](), "EnableVolumeAuthorization")
-	requireFields(t, reflect.TypeFor[filer.WriteOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[filer.AppendOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[filer.MultipartUploadOptions](), "Filename", "Authorization")
-	requireFields(t, reflect.TypeFor[filer.GetOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[master.AssignOptions](),
+		"Count",
+		"Collection",
+		"DataCenter",
+		"Rack",
+		"DataNode",
+		"Replication",
+		"TTL",
+		"Preallocate",
+		"MemoryMapMaxSizeMB",
+		"WritableVolumeCount",
+		"Disk",
+	)
+	requireFields(t, reflect.TypeFor[master.LookupOptions](), "Collection", "FileID", "Read")
+	requireFields(t, reflect.TypeFor[master.GrowOptions](),
+		"Count",
+		"Collection",
+		"DataCenter",
+		"Rack",
+		"DataNode",
+		"Replication",
+		"TTL",
+		"Preallocate",
+		"MemoryMapMaxSizeMB",
+		"Disk",
+	)
+	requireFields(t, reflect.TypeFor[master.SubmitOptions](), "FieldName", "FileContentType")
+	requireFields(t, reflect.TypeFor[master.VacuumOptions](), "GarbageThreshold")
+	requireFields(t, reflect.TypeFor[master.DeleteCollectionOptions](), "Collection")
+	requireFields(t, reflect.TypeFor[filer.WriteOptions](),
+		"DataCenter",
+		"Rack",
+		"DataNode",
+		"Collection",
+		"Replication",
+		"TTL",
+		"MaxMB",
+		"Mode",
+		"Offset",
+		"Fsync",
+		"SaveInside",
+		"SkipCheckParentDir",
+		"ContentType",
+		"ContentDisposition",
+		"SeaweedHeaders",
+		"ContentLength",
+		"Authorization",
+	)
+	requireFields(t, reflect.TypeFor[filer.AppendOptions](),
+		"DataCenter",
+		"Rack",
+		"DataNode",
+		"Collection",
+		"Replication",
+		"TTL",
+		"MaxMB",
+		"Mode",
+		"Fsync",
+		"SaveInside",
+		"SkipCheckParentDir",
+		"ContentType",
+		"ContentDisposition",
+		"SeaweedHeaders",
+		"ContentLength",
+		"Authorization",
+	)
+	requireFields(t, reflect.TypeFor[filer.MultipartUploadOptions](),
+		"DataCenter",
+		"Rack",
+		"DataNode",
+		"Collection",
+		"Replication",
+		"TTL",
+		"MaxMB",
+		"Mode",
+		"Fsync",
+		"SaveInside",
+		"SkipCheckParentDir",
+		"Filename",
+		"FileContentType",
+		"FieldName",
+		"SeaweedHeaders",
+		"Authorization",
+	)
+	requireFields(t, reflect.TypeFor[filer.GetOptions](), "ResponseContentDisposition", "ResolveManifest", "Authorization")
 	requireFields(t, reflect.TypeFor[filer.HeadOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[filer.StatOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[filer.ListOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[filer.WalkOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[filer.DeleteOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[filer.StatOptions](), "ResolveManifest", "Authorization")
+	requireFields(t, reflect.TypeFor[filer.ListOptions](), "Limit", "LastFileName", "NamePattern", "NamePatternExclude", "Authorization")
+	requireFields(t, reflect.TypeFor[filer.WalkOptions](), "Limit", "LastFileName", "NamePattern", "NamePatternExclude", "Authorization")
+	requireFields(t, reflect.TypeFor[filer.DeleteOptions](), "Recursive", "IgnoreRecursiveError", "SkipChunkDeletion", "Authorization")
 	requireFields(t, reflect.TypeFor[filer.CopyOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[filer.MoveOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[filer.TagOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[filer.MkdirOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[tus.OptionsOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[tus.CreateOptions](), "Authorization")
+	requireFields(t, reflect.TypeFor[tus.CreateOptions](), "Size", "Metadata", "Authorization")
 	requireFields(t, reflect.TypeFor[tus.HeadOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[tus.PatchOptions](), "Authorization")
 	requireFields(t, reflect.TypeFor[tus.TerminateOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[tus.UploadOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[tus.ResumeOptions](), "Authorization")
-	requireFields(t, reflect.TypeFor[master.VacuumOptions](), "GarbageThreshold")
-	requireFields(t, reflect.TypeFor[master.DeleteCollectionOptions](), "Collection")
+	requireFields(t, reflect.TypeFor[tus.UploadOptions](), "Size", "ChunkSize", "Metadata", "Authorization")
+	requireFields(t, reflect.TypeFor[tus.ResumeOptions](), "ChunkSize", "Authorization")
+
+	requireJSONTags(t, reflect.TypeFor[master.AssignResponse](), map[string]string{
+		"Count":         "count",
+		"FID":           "fid",
+		"URL":           "url",
+		"PublicURL":     "publicUrl",
+		"Authorization": "-",
+	})
+	requireJSONTags(t, reflect.TypeFor[master.LookupResponse](), map[string]string{
+		"Locations":     "locations",
+		"Authorization": "-",
+	})
+	requireJSONTags(t, reflect.TypeFor[master.Location](), map[string]string{
+		"URL":        "url",
+		"PublicURL":  "publicUrl",
+		"DataCenter": "dataCenter,omitempty",
+		"Rack":       "rack,omitempty",
+	})
+	requireJSONTags(t, reflect.TypeFor[master.ClusterStatus](), map[string]string{
+		"IsLeader": "IsLeader",
+		"Leader":   "Leader",
+		"Peers":    "Peers",
+	})
+	requireJSONTags(t, reflect.TypeFor[master.DirStatusResponse](), map[string]string{
+		"Topology": "Topology",
+		"Version":  "Version",
+	})
+	requireJSONTags(t, reflect.TypeFor[master.VolumeInfo](), map[string]string{
+		"ID":                "Id",
+		"Size":              "Size",
+		"ReplicaPlacement":  "ReplicaPlacement",
+		"RepType":           "RepType",
+		"TTL":               "Ttl",
+		"DiskType":          "DiskType",
+		"Collection":        "Collection",
+		"Version":           "Version",
+		"FileCount":         "FileCount",
+		"DeleteCount":       "DeleteCount",
+		"DeletedByteCount":  "DeletedByteCount",
+		"ReadOnly":          "ReadOnly",
+		"CompactRevision":   "CompactRevision",
+		"ModifiedAtSecond":  "ModifiedAtSecond",
+		"RemoteStorageName": "RemoteStorageName",
+		"RemoteStorageKey":  "RemoteStorageKey",
+	})
+	requireJSONTags(t, reflect.TypeFor[volume.StatusResponse](), map[string]string{
+		"DiskStatuses": "DiskStatuses",
+		"Version":      "Version",
+		"Volumes":      "Volumes",
+	})
+	requireJSONTags(t, reflect.TypeFor[volume.DiskStatus](), map[string]string{
+		"Dir":         "dir",
+		"All":         "all",
+		"Used":        "used",
+		"Free":        "free",
+		"PercentFree": "percent_free",
+		"PercentUsed": "percent_used",
+		"DiskType":    "disk_type",
+	})
+	requireJSONTags(t, reflect.TypeFor[volume.VolumeInfo](), map[string]string{
+		"ID":                "Id",
+		"Size":              "Size",
+		"ReplicaPlacement":  "ReplicaPlacement",
+		"RepType":           "RepType",
+		"TTL":               "Ttl",
+		"DiskType":          "DiskType",
+		"DiskID":            "DiskId",
+		"Collection":        "Collection",
+		"Version":           "Version",
+		"FileCount":         "FileCount",
+		"DeleteCount":       "DeleteCount",
+		"DeletedByteCount":  "DeletedByteCount",
+		"ReadOnly":          "ReadOnly",
+		"CompactRevision":   "CompactRevision",
+		"ModifiedAtSecond":  "ModifiedAtSecond",
+		"RemoteStorageName": "RemoteStorageName",
+		"RemoteStorageKey":  "RemoteStorageKey",
+	})
+	requireJSONTags(t, reflect.TypeFor[filer.Entry](), map[string]string{
+		"FullPath":        "FullPath",
+		"Mtime":           "Mtime",
+		"Crtime":          "Crtime",
+		"Mode":            "Mode",
+		"Mime":            "Mime",
+		"Replication":     "Replication",
+		"Collection":      "Collection",
+		"TtlSec":          "TtlSec",
+		"DiskType":        "DiskType",
+		"UserName":        "UserName",
+		"GroupNames":      "GroupNames",
+		"UID":             "Uid",
+		"GID":             "Gid",
+		"SymlinkTarget":   "SymlinkTarget",
+		"MD5":             "Md5",
+		"FileSize":        "FileSize",
+		"Rdev":            "Rdev",
+		"Inode":           "Inode",
+		"Extended":        "Extended",
+		"Content":         "Content",
+		"Chunks":          "chunks",
+		"HardLinkID":      "HardLinkId",
+		"HardLinkCounter": "HardLinkCounter",
+		"Remote":          "Remote",
+		"Quota":           "Quota",
+	})
 }
 
 func requireMethod(t *testing.T, receiver reflect.Type, name string, wantIn []reflect.Type, wantOut []reflect.Type) {
@@ -335,6 +519,20 @@ func requireFields(t *testing.T, typ reflect.Type, names ...string) {
 	for _, name := range names {
 		if _, ok := typ.FieldByName(name); !ok {
 			t.Fatalf("%s.%s is missing", typ, name)
+		}
+	}
+}
+
+func requireJSONTags(t *testing.T, typ reflect.Type, tags map[string]string) {
+	t.Helper()
+
+	for name, want := range tags {
+		field, ok := typ.FieldByName(name)
+		if !ok {
+			t.Fatalf("%s.%s is missing", typ, name)
+		}
+		if got := field.Tag.Get("json"); got != want {
+			t.Fatalf("%s.%s json tag = %q, want %q", typ, name, got, want)
 		}
 	}
 }
