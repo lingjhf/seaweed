@@ -10,12 +10,14 @@ import (
 	"github.com/lingjhf/seaweed/blob"
 	"github.com/lingjhf/seaweed/filer"
 	"github.com/lingjhf/seaweed/master"
+	"github.com/lingjhf/seaweed/tus"
 	"github.com/lingjhf/seaweed/volume"
 )
 
 func TestNativeAPISurfaceAlignment(t *testing.T) {
 	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
 	readerType := reflect.TypeOf((*io.Reader)(nil)).Elem()
+	readSeekerType := reflect.TypeOf((*io.ReadSeeker)(nil)).Elem()
 	errorType := reflect.TypeOf((*error)(nil)).Elem()
 
 	requireMethod(t, reflect.TypeOf((*master.Client)(nil)), "Submit",
@@ -142,6 +144,99 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 		},
 	)
 
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Options",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(tus.OptionsOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Options)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Create",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(tus.CreateOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Upload)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "CreateWithUpload",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			readerType,
+			reflect.TypeOf(tus.CreateOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Upload)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Head",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(tus.HeadOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Status)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Patch",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(int64(0)),
+			readerType,
+			reflect.TypeOf(int64(0)),
+			reflect.TypeOf(tus.PatchOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Status)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Terminate",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			reflect.TypeOf(tus.TerminateOptions{}),
+		},
+		[]reflect.Type{
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Upload",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			readerType,
+			reflect.TypeOf(tus.UploadOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Upload)(nil)),
+			errorType,
+		},
+	)
+	requireMethod(t, reflect.TypeOf((*tus.Client)(nil)), "Resume",
+		[]reflect.Type{
+			ctxType,
+			reflect.TypeOf(""),
+			readSeekerType,
+			reflect.TypeOf(tus.ResumeOptions{}),
+		},
+		[]reflect.Type{
+			reflect.TypeOf((*tus.Status)(nil)),
+			errorType,
+		},
+	)
+
 	requireFields(t, reflect.TypeOf(volume.PutOptions{}),
 		"Fsync",
 		"Replicate",
@@ -180,6 +275,13 @@ func TestNativeAPISurfaceAlignment(t *testing.T) {
 	requireFields(t, reflect.TypeOf(filer.MoveOptions{}), "Authorization")
 	requireFields(t, reflect.TypeOf(filer.TagOptions{}), "Authorization")
 	requireFields(t, reflect.TypeOf(filer.MkdirOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.OptionsOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.CreateOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.HeadOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.PatchOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.TerminateOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.UploadOptions{}), "Authorization")
+	requireFields(t, reflect.TypeOf(tus.ResumeOptions{}), "Authorization")
 }
 
 func requireMethod(t *testing.T, receiver reflect.Type, name string, wantIn []reflect.Type, wantOut []reflect.Type) {

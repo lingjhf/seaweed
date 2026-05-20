@@ -284,11 +284,17 @@ if err != nil {
 
 ### TUS Resumable Uploads
 
-`Upload` uses SeaweedFS creation-with-upload by default. Set `ChunkSize` when you want explicit chunked PATCH uploads.
+`Upload` uses SeaweedFS creation-with-upload by default. Set `ChunkSize` when you want explicit chunked PATCH uploads. This maps to SeaweedFS' documented TUS `OPTIONS`, `POST`, `HEAD`, `PATCH`, and `DELETE` endpoints under `/.tus`.
 
 ```go
 ctx := context.Background()
 data := "large upload payload"
+
+options, err := client.TUS().Options(ctx, tus.OptionsOptions{})
+if err != nil {
+    return err
+}
+fmt.Println(options.Extensions)
 
 upload, err := client.TUS().Upload(ctx, "/sdk/video.mp4", strings.NewReader(data), tus.UploadOptions{
     Size: int64(len(data)),
@@ -322,6 +328,28 @@ defer file.Close()
 
 status, err := client.TUS().Resume(ctx, upload.Location, file, tus.ResumeOptions{
     ChunkSize: 8 << 20,
+})
+if err != nil {
+    return err
+}
+fmt.Println(status.Offset)
+```
+
+For secured filer deployments, pass the same per-request `Authorization` value through the TUS option structs:
+
+```go
+tusToken := "Bearer <jwt>"
+
+upload, err := client.TUS().Upload(ctx, "/secure/video.mp4", strings.NewReader(data), tus.UploadOptions{
+    Size:          int64(len(data)),
+    Authorization: tusToken,
+})
+if err != nil {
+    return err
+}
+
+status, err := client.TUS().Head(ctx, upload.Location, tus.HeadOptions{
+    Authorization: tusToken,
 })
 if err != nil {
     return err

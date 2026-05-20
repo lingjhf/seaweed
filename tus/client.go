@@ -50,10 +50,16 @@ type Options struct {
 	MaxSize    int64
 }
 
+// OptionsOptions configures TUS capability discovery.
+type OptionsOptions struct {
+	Authorization string
+}
+
 // CreateOptions configures upload creation.
 type CreateOptions struct {
-	Size     int64
-	Metadata map[string]string
+	Size          int64
+	Metadata      map[string]string
+	Authorization string
 }
 
 // Upload describes a TUS upload resource.
@@ -71,14 +77,31 @@ type Status struct {
 
 // UploadOptions configures Upload.
 type UploadOptions struct {
-	Size      int64
-	ChunkSize int64
-	Metadata  map[string]string
+	Size          int64
+	ChunkSize     int64
+	Metadata      map[string]string
+	Authorization string
 }
 
 // ResumeOptions configures Resume.
 type ResumeOptions struct {
-	ChunkSize int64
+	ChunkSize     int64
+	Authorization string
+}
+
+// HeadOptions configures an upload status request.
+type HeadOptions struct {
+	Authorization string
+}
+
+// PatchOptions configures one upload patch request.
+type PatchOptions struct {
+	Authorization string
+}
+
+// TerminateOptions configures upload termination.
+type TerminateOptions struct {
+	Authorization string
 }
 
 // New creates a TUS client.
@@ -120,13 +143,16 @@ func New(config Config) (*Client, error) {
 }
 
 // Options returns server TUS capability headers.
-func (c *Client) Options(ctx context.Context) (*Options, error) {
+func (c *Client) Options(ctx context.Context, opts OptionsOptions) (*Options, error) {
 	path, err := c.baseURL("/")
 	if err != nil {
 		return nil, err
 	}
+	header := c.baseHeader()
+	addHeader(header, "Authorization", opts.Authorization)
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
 		Method:        http.MethodOptions,
+		Header:        header,
 		ContentLength: -1,
 	})
 	if err != nil {
@@ -156,6 +182,7 @@ func (c *Client) Create(ctx context.Context, targetPath string, opts CreateOptio
 	}
 	header := c.baseHeader()
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
+	addHeader(header, "Authorization", opts.Authorization)
 	addMetadata(header, opts.Metadata)
 
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
@@ -194,6 +221,7 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 	header := c.baseHeader()
 	header.Set("Upload-Length", strconv.FormatInt(opts.Size, 10))
 	header.Set("Content-Type", c.contentType)
+	addHeader(header, "Authorization", opts.Authorization)
 	addMetadata(header, opts.Metadata)
 
 	resp, err := c.http.DoEndpoint(ctx, c.endpoints, path, httpx.Request{
@@ -225,14 +253,16 @@ func (c *Client) CreateWithUpload(ctx context.Context, targetPath string, body i
 }
 
 // Head returns current upload status for location.
-func (c *Client) Head(ctx context.Context, location string) (*Status, error) {
+func (c *Client) Head(ctx context.Context, location string, opts HeadOptions) (*Status, error) {
 	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
 		return nil, err
 	}
+	header := c.baseHeader()
+	addHeader(header, "Authorization", opts.Authorization)
 	request := httpx.Request{
 		Method:        http.MethodHead,
-		Header:        c.baseHeader(),
+		Header:        header,
 		ContentLength: -1,
 	}
 	var resp *http.Response
@@ -261,7 +291,7 @@ func (c *Client) Head(ctx context.Context, location string) (*Status, error) {
 }
 
 // Patch appends bytes to an upload resource at offset.
-func (c *Client) Patch(ctx context.Context, location string, offset int64, body io.Reader, length int64) (*Status, error) {
+func (c *Client) Patch(ctx context.Context, location string, offset int64, body io.Reader, length int64, opts PatchOptions) (*Status, error) {
 	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
 		return nil, err
@@ -269,6 +299,7 @@ func (c *Client) Patch(ctx context.Context, location string, offset int64, body 
 	header := c.baseHeader()
 	header.Set("Upload-Offset", strconv.FormatInt(offset, 10))
 	header.Set("Content-Type", c.contentType)
+	addHeader(header, "Authorization", opts.Authorization)
 	request := httpx.Request{
 		Method:        http.MethodPatch,
 		Header:        header,
@@ -297,14 +328,16 @@ func (c *Client) Patch(ctx context.Context, location string, offset int64, body 
 }
 
 // Terminate deletes an upload resource.
-func (c *Client) Terminate(ctx context.Context, location string) error {
+func (c *Client) Terminate(ctx context.Context, location string, opts TerminateOptions) error {
 	target, endpointAware, err := c.uploadURL(location)
 	if err != nil {
 		return err
 	}
+	header := c.baseHeader()
+	addHeader(header, "Authorization", opts.Authorization)
 	request := httpx.Request{
 		Method:        http.MethodDelete,
-		Header:        c.baseHeader(),
+		Header:        header,
 		ContentLength: -1,
 	}
 	if endpointAware {
@@ -321,18 +354,20 @@ func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, 
 	}
 	if opts.ChunkSize <= 0 {
 		return c.CreateWithUpload(ctx, targetPath, body, CreateOptions{
-			Size:     opts.Size,
-			Metadata: opts.Metadata,
+			Size:          opts.Size,
+			Metadata:      opts.Metadata,
+			Authorization: opts.Authorization,
 		})
 	}
 	upload, err := c.Create(ctx, targetPath, CreateOptions{
-		Size:     opts.Size,
-		Metadata: opts.Metadata,
+		Size:          opts.Size,
+		Metadata:      opts.Metadata,
+		Authorization: opts.Authorization,
 	})
 	if err != nil {
 		return nil, err
 	}
-	offset, err := c.patchChunks(ctx, upload.Location, body, 0, opts.Size, opts.ChunkSize)
+	offset, err := c.patchChunks(ctx, upload.Location, body, 0, opts.Size, opts.ChunkSize, opts.Authorization)
 	if err != nil {
 		return nil, err
 	}
@@ -342,21 +377,21 @@ func (c *Client) Upload(ctx context.Context, targetPath string, body io.Reader, 
 
 // Resume seeks body to the server offset and continues an existing upload.
 func (c *Client) Resume(ctx context.Context, location string, body io.ReadSeeker, opts ResumeOptions) (*Status, error) {
-	status, err := c.Head(ctx, location)
+	status, err := c.Head(ctx, location, HeadOptions{Authorization: opts.Authorization})
 	if err != nil {
 		return nil, err
 	}
 	if _, err := body.Seek(status.Offset, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("tus: seek to offset %d: %w", status.Offset, err)
 	}
-	offset, err := c.patchChunks(ctx, location, body, status.Offset, status.Size, opts.ChunkSize)
+	offset, err := c.patchChunks(ctx, location, body, status.Offset, status.Size, opts.ChunkSize, opts.Authorization)
 	if err != nil {
 		return nil, err
 	}
 	return &Status{Offset: offset, Size: status.Size}, nil
 }
 
-func (c *Client) patchChunks(ctx context.Context, location string, body io.Reader, offset int64, size int64, chunkSize int64) (int64, error) {
+func (c *Client) patchChunks(ctx context.Context, location string, body io.Reader, offset int64, size int64, chunkSize int64, authorization string) (int64, error) {
 	if chunkSize <= 0 {
 		chunkSize = size
 	}
@@ -365,7 +400,7 @@ func (c *Client) patchChunks(ctx context.Context, location string, body io.Reade
 		if remaining := size - offset; remaining < length {
 			length = remaining
 		}
-		status, err := c.Patch(ctx, location, offset, io.LimitReader(body, length), length)
+		status, err := c.Patch(ctx, location, offset, io.LimitReader(body, length), length, PatchOptions{Authorization: authorization})
 		if err != nil {
 			return offset, err
 		}
@@ -377,6 +412,12 @@ func (c *Client) patchChunks(ctx context.Context, location string, body io.Reade
 func (c *Client) baseHeader() http.Header {
 	return http.Header{
 		"Tus-Resumable": []string{Version},
+	}
+}
+
+func addHeader(header http.Header, key string, value string) {
+	if value != "" {
+		header.Set(key, value)
 	}
 }
 

@@ -81,7 +81,7 @@ func BenchmarkUploadChunks(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		offset, err := client.patchChunks(context.Background(), upload.Location, strings.NewReader(body), 0, int64(len(body)), 32*1024)
+		offset, err := client.patchChunks(context.Background(), upload.Location, strings.NewReader(body), 0, int64(len(body)), 32*1024, "")
 		if err != nil {
 			b.Fatal(err)
 		}

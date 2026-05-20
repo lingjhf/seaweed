@@ -14,6 +14,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Volume `Delete` now accepts `DeleteOptions` so deletes can carry per-request authorization.
 - Filer `Head`, `Tags`, `Copy`, `Move`, `SetTags`, `DeleteTags`, and `Mkdir` now accept option structs so all filer operations can carry per-request authorization.
 - Filer `UploadMultipart` now accepts a target path and uses `MultipartUploadOptions.Filename` only for directory targets.
+- TUS `Options`, `Head`, `Patch`, and `Terminate` now accept option structs so all TUS operations can carry per-request authorization.
 
 ### Added
 
@@ -21,6 +22,7 @@ This project is in the `0.x` development line. Public APIs can change while the 
 - Master assign and lookup responses now expose SeaweedFS `Authorization` response headers.
 - Volume requests now support per-request `Authorization` headers.
 - Filer requests now support per-request `Authorization` headers.
+- TUS requests now support per-request `Authorization` headers.
 - Blob can opt in to master-issued volume `Authorization` headers with `EnableVolumeAuthorization`.
 - Volume read and write options now cover documented query parameters and headers.
 - Volume server status now returns typed disk and volume metadata.

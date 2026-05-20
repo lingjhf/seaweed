@@ -31,7 +31,7 @@ func TestTUSUploadResumeTerminateIntegration(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	options, err := client.TUS().Options(ctx)
+	options, err := client.TUS().Options(ctx, tus.OptionsOptions{})
 	if err != nil {
 		t.Fatalf("Options() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestTUSUploadResumeTerminateIntegration(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	first := int64(6)
-	status, err := client.TUS().Patch(ctx, created.Location, 0, bytes.NewReader(resumeData[:first]), first)
+	status, err := client.TUS().Patch(ctx, created.Location, 0, bytes.NewReader(resumeData[:first]), first, tus.PatchOptions{})
 	if err != nil {
 		t.Fatalf("Patch() error = %v", err)
 	}
@@ -82,10 +82,10 @@ func TestTUSUploadResumeTerminateIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create cancel upload error = %v", err)
 	}
-	if err := client.TUS().Terminate(ctx, cancelled.Location); err != nil {
+	if err := client.TUS().Terminate(ctx, cancelled.Location, tus.TerminateOptions{}); err != nil {
 		t.Fatalf("Terminate() error = %v", err)
 	}
-	_, err = client.TUS().Head(ctx, cancelled.Location)
+	_, err = client.TUS().Head(ctx, cancelled.Location, tus.HeadOptions{})
 	if !isHTTPStatus(err, http.StatusNotFound) {
 		t.Fatalf("Head after terminate error = %v, want 404", err)
 	}

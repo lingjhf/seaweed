@@ -62,6 +62,9 @@ func TestOptionsReturnsServerCapabilities(t *testing.T) {
 		if r.URL.Path != "/.tus/" {
 			t.Fatalf("path = %s, want /.tus/", r.URL.Path)
 		}
+		if r.Header.Get("Tus-Resumable") != tus.Version {
+			t.Fatalf("Tus-Resumable = %q", r.Header.Get("Tus-Resumable"))
+		}
 		w.Header().Set("Tus-Resumable", tus.Version)
 		w.Header().Set("Tus-Version", "1.0.0")
 		w.Header().Set("Tus-Extension", "creation,termination")
@@ -71,7 +74,7 @@ func TestOptionsReturnsServerCapabilities(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	options, err := client.Options(context.Background())
+	options, err := client.Options(context.Background(), tus.OptionsOptions{})
 	if err != nil {
 		t.Fatalf("Options() error = %v", err)
 	}
@@ -135,6 +138,147 @@ func TestCreateWithUploadSendsBodyAndHeaders(t *testing.T) {
 	}
 }
 
+func TestRequestsUsePerRequestAuthorization(t *testing.T) {
+	t.Parallel()
+
+	const requestAuth = "Bearer request-token"
+
+	tests := []struct {
+		name string
+		call func(context.Context, *tus.Client) error
+	}{
+		{
+			name: "options",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Options(ctx, tus.OptionsOptions{Authorization: requestAuth})
+				return err
+			},
+		},
+		{
+			name: "create",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Create(ctx, "/secure/create.txt", tus.CreateOptions{
+					Size:          1,
+					Authorization: requestAuth,
+				})
+				return err
+			},
+		},
+		{
+			name: "create with upload",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.CreateWithUpload(ctx, "/secure/create-with-upload.txt", strings.NewReader("x"), tus.CreateOptions{
+					Size:          1,
+					Authorization: requestAuth,
+				})
+				return err
+			},
+		},
+		{
+			name: "head",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Head(ctx, "/.tus/.uploads/abc", tus.HeadOptions{Authorization: requestAuth})
+				return err
+			},
+		},
+		{
+			name: "patch",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Patch(ctx, "/.tus/.uploads/abc", 2, strings.NewReader("llo"), 3, tus.PatchOptions{Authorization: requestAuth})
+				return err
+			},
+		},
+		{
+			name: "terminate",
+			call: func(ctx context.Context, client *tus.Client) error {
+				return client.Terminate(ctx, "/.tus/.uploads/abc", tus.TerminateOptions{Authorization: requestAuth})
+			},
+		},
+		{
+			name: "upload creation with upload",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Upload(ctx, "/secure/upload.txt", strings.NewReader("hello"), tus.UploadOptions{
+					Size:          5,
+					Authorization: requestAuth,
+				})
+				return err
+			},
+		},
+		{
+			name: "upload chunked",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Upload(ctx, "/secure/chunked.txt", strings.NewReader("hello"), tus.UploadOptions{
+					Size:          5,
+					ChunkSize:     3,
+					Authorization: requestAuth,
+				})
+				return err
+			},
+		},
+		{
+			name: "resume",
+			call: func(ctx context.Context, client *tus.Client) error {
+				_, err := client.Resume(ctx, "/.tus/.uploads/abc", strings.NewReader("hello"), tus.ResumeOptions{Authorization: requestAuth})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != requestAuth {
+					t.Fatalf("Authorization = %q, want %q", r.Header.Get("Authorization"), requestAuth)
+				}
+				if r.Header.Get("Tus-Resumable") != tus.Version {
+					t.Fatalf("Tus-Resumable = %q, want %q", r.Header.Get("Tus-Resumable"), tus.Version)
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				switch r.Method {
+				case http.MethodOptions:
+					w.Header().Set("Tus-Resumable", tus.Version)
+					w.Header().Set("Tus-Version", tus.Version)
+					w.Header().Set("Tus-Extension", "creation,creation-with-upload,termination")
+					w.Header().Set("Tus-Max-Size", "1048576")
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPost:
+					w.Header().Set("Location", "/.tus/.uploads/abc")
+					w.Header().Set("Upload-Offset", "5")
+					w.WriteHeader(http.StatusCreated)
+				case http.MethodHead:
+					w.Header().Set("Upload-Offset", "2")
+					w.Header().Set("Upload-Length", "5")
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPatch:
+					w.Header().Set("Upload-Offset", "5")
+					w.WriteHeader(http.StatusNoContent)
+				case http.MethodDelete:
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					t.Fatalf("unexpected method %s", r.Method)
+				}
+			}))
+			defer server.Close()
+
+			client, err := tus.New(tus.Config{
+				FilerURLs:   []string{server.URL},
+				BasePath:    "/.tus",
+				HTTPClient:  server.Client(),
+				BearerToken: "global-token",
+			})
+			if err != nil {
+				t.Fatalf("tus.New() error = %v", err)
+			}
+			defer client.Close()
+
+			if err := tt.call(context.Background(), client); err != nil {
+				t.Fatalf("%s call error = %v", tt.name, err)
+			}
+		})
+	}
+}
+
 func TestCreateResolvesAbsoluteLocation(t *testing.T) {
 	t.Parallel()
 
@@ -161,7 +305,7 @@ func TestCreateResolvesAbsoluteLocation(t *testing.T) {
 	if upload.Location != server.URL+"/.tus/.uploads/absolute" {
 		t.Fatalf("Location = %q, want absolute server location", upload.Location)
 	}
-	if err := client.Terminate(context.Background(), upload.Location); err != nil {
+	if err := client.Terminate(context.Background(), upload.Location, tus.TerminateOptions{}); err != nil {
 		t.Fatalf("Terminate() error = %v", err)
 	}
 	if deletePath != "/.tus/.uploads/absolute" {
@@ -206,21 +350,21 @@ func TestHeadPatchAndTerminate(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	status, err := client.Head(context.Background(), "/.tus/.uploads/abc")
+	status, err := client.Head(context.Background(), "/.tus/.uploads/abc", tus.HeadOptions{})
 	if err != nil {
 		t.Fatalf("Head() error = %v", err)
 	}
 	if status.Offset != 2 || status.Size != 5 {
 		t.Fatalf("Head() = %+v, want offset 2 size 5", status)
 	}
-	status, err = client.Patch(context.Background(), "/.tus/.uploads/abc", 2, strings.NewReader("llo"), 3)
+	status, err = client.Patch(context.Background(), "/.tus/.uploads/abc", 2, strings.NewReader("llo"), 3, tus.PatchOptions{})
 	if err != nil {
 		t.Fatalf("Patch() error = %v", err)
 	}
 	if status.Offset != 5 {
 		t.Fatalf("Patch().Offset = %d, want 5", status.Offset)
 	}
-	if err := client.Terminate(context.Background(), "/.tus/.uploads/abc"); err != nil {
+	if err := client.Terminate(context.Background(), "/.tus/.uploads/abc", tus.TerminateOptions{}); err != nil {
 		t.Fatalf("Terminate() error = %v", err)
 	}
 }
@@ -254,7 +398,7 @@ func TestTerminateReturnsStatusAPIError(t *testing.T) {
 	}
 	defer client.Close()
 
-	err = client.Terminate(context.Background(), "/.tus/.uploads/abc")
+	err = client.Terminate(context.Background(), "/.tus/.uploads/abc", tus.TerminateOptions{})
 	if err == nil {
 		t.Fatal("Terminate() error = nil, want API error")
 	}
@@ -478,7 +622,7 @@ func TestPatchReturnsStatusError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	if _, err := client.Patch(context.Background(), "/.tus/.uploads/abc", 0, strings.NewReader("hello"), 5); err == nil {
+	if _, err := client.Patch(context.Background(), "/.tus/.uploads/abc", 0, strings.NewReader("hello"), 5, tus.PatchOptions{}); err == nil {
 		t.Fatal("Patch() error = nil, want status error")
 	}
 }
@@ -510,10 +654,10 @@ func TestValidationAndResponseErrors(t *testing.T) {
 	if _, err := client.Upload(context.Background(), "/file", strings.NewReader(""), tus.UploadOptions{Size: -1}); err == nil {
 		t.Fatal("Upload() error = nil, want size error")
 	}
-	if _, err := client.Head(context.Background(), ""); err == nil {
+	if _, err := client.Head(context.Background(), "", tus.HeadOptions{}); err == nil {
 		t.Fatal("Head() error = nil, want location error")
 	}
-	if err := client.Terminate(context.Background(), "relative"); err == nil {
+	if err := client.Terminate(context.Background(), "relative", tus.TerminateOptions{}); err == nil {
 		t.Fatal("Terminate() error = nil, want relative location error")
 	}
 }
@@ -528,7 +672,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server)
-		if _, err := client.Options(context.Background()); err == nil {
+		if _, err := client.Options(context.Background(), tus.OptionsOptions{}); err == nil {
 			t.Fatal("Options() error = nil, want status error")
 		}
 	})
@@ -541,7 +685,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server)
-		if _, err := client.Options(context.Background()); err == nil {
+		if _, err := client.Options(context.Background(), tus.OptionsOptions{}); err == nil {
 			t.Fatal("Options() error = nil, want invalid max size error")
 		}
 	})
@@ -605,7 +749,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server)
-		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc"); err == nil {
+		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc", tus.HeadOptions{}); err == nil {
 			t.Fatal("Head() error = nil, want missing offset error")
 		}
 	})
@@ -618,7 +762,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server)
-		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc"); err == nil {
+		if _, err := client.Head(context.Background(), "/.tus/.uploads/abc", tus.HeadOptions{}); err == nil {
 			t.Fatal("Head() error = nil, want missing length error")
 		}
 	})
@@ -631,7 +775,7 @@ func TestInvalidHeadersAndStatuses(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server)
-		if _, err := client.Patch(context.Background(), "/.tus/.uploads/abc", 0, strings.NewReader("x"), 1); err == nil {
+		if _, err := client.Patch(context.Background(), "/.tus/.uploads/abc", 0, strings.NewReader("x"), 1, tus.PatchOptions{}); err == nil {
 			t.Fatal("Patch() error = nil, want invalid offset error")
 		}
 	})
