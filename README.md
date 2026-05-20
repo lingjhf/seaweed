@@ -1,8 +1,23 @@
 # SeaweedFS Go SDK
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/lingjhf/seaweed.svg)](https://pkg.go.dev/github.com/lingjhf/seaweed)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/lingjhf/seaweed)](https://go.dev/)
+[![CI](https://img.shields.io/github/actions/workflow/status/lingjhf/seaweed/test.yml?branch=master)](https://github.com/lingjhf/seaweed/actions)
+[![Release](https://img.shields.io/github/v/tag/lingjhf/seaweed?label=release&sort=semver)](https://github.com/lingjhf/seaweed/tree/0.1.0)
+
 Go client SDK for SeaweedFS native HTTP APIs plus SeaweedFS S3/IAM compatibility.
 
-This project is in the `0.x` development line. Public APIs can change between minor versions while the SDK is being shaped against real SeaweedFS behavior.
+Current production-usable release: [`0.1.0`](https://github.com/lingjhf/seaweed/tree/0.1.0).
+
+This project is in the `0.x` development line. Pin an exact version in production, because public APIs can still change between minor versions while the SDK is being shaped against real SeaweedFS behavior.
+
+## Contents
+
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [Usage Examples](#usage-examples)
+- [Validation](#validation)
+- [Notes](#notes)
 
 ## Features
 
@@ -13,31 +28,53 @@ This project is in the `0.x` development line. Public APIs can change between mi
 - TUS client: native SeaweedFS resumable upload support for `/.tus`.
 - S3/IAM clients: AWS SDK v2 clients configured for SeaweedFS endpoints.
 
-## Basic Usage
+## Quick Start
 
 Install the SDK:
 
 ```bash
-go get github.com/lingjhf/seaweed
+go get github.com/lingjhf/seaweed@0.1.0
 ```
 
-Create a root client for the SeaweedFS services you use:
+Create a root client and upload one blob:
 
 ```go
-client, err := seaweed.New(seaweed.Config{
-    MasterURLs:  []string{"http://127.0.0.1:9333"},
-    FilerURLs:   []string{"http://127.0.0.1:8888"},
-    TUSBasePath: "/.tus",
-    S3URLs:      []string{"http://127.0.0.1:8333"},
+package main
 
-    AccessKeyID:     "seaweed_admin",
-    SecretAccessKey: "seaweed_secret",
-    Region:          "us-east-1",
-})
-if err != nil {
-    return err
+import (
+    "context"
+    "fmt"
+    "log"
+    "strings"
+
+    "github.com/lingjhf/seaweed"
+    "github.com/lingjhf/seaweed/blob"
+)
+
+func main() {
+    ctx := context.Background()
+
+    client, err := seaweed.New(seaweed.Config{
+        MasterURLs: []string{"http://127.0.0.1:9333"},
+        FilerURLs:  []string{"http://127.0.0.1:8888"},
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer client.Close()
+
+    data := "hello seaweedfs"
+    put, err := client.Blob().Put(ctx, strings.NewReader(data), blob.PutOptions{
+        ContentType:   "text/plain",
+        ContentLength: int64(len(data)),
+        Filename:      "hello.txt",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println(put.FileID)
 }
-defer client.Close()
 ```
 
 See `examples/basic` and `examples/s3`.
