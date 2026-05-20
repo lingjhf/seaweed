@@ -575,6 +575,73 @@ func TestListPageBuildsJSONRequest(t *testing.T) {
 	}
 }
 
+func TestListPageNormalizesDirectoryPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		path     string
+		wantPath string
+	}{
+		{
+			name:     "root",
+			path:     "/",
+			wantPath: "/",
+		},
+		{
+			name:     "already trailing slash",
+			path:     "/docs/",
+			wantPath: "/docs/",
+		},
+		{
+			name:     "relative directory",
+			path:     "docs",
+			wantPath: "/docs/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.wantPath {
+					t.Fatalf("path = %s, want %s", r.URL.Path, tt.wantPath)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"Path":    tt.wantPath,
+					"Entries": []map[string]any{},
+				})
+			}))
+			defer server.Close()
+
+			client := newTestClient(t, server)
+			if _, err := client.ListPage(context.Background(), tt.path, filer.ListOptions{}); err != nil {
+				t.Fatalf("ListPage() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestFilerEscapesPathSegments(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/docs/a%20b.txt" {
+			t.Fatalf("escaped path = %s, want /docs/a%%20b.txt", r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	resp, err := client.Get(context.Background(), "/docs/a b.txt", filer.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
 func TestWalkPaginatesAndStopsOnCallbackError(t *testing.T) {
 	t.Parallel()
 
